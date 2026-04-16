@@ -8,10 +8,13 @@ description: >
   real-time RT control, digital I/O, analog I/O, modbus, serial communication,
   TCP/IP socket, vision integration, welding app, conveyor tracking, posj, posx,
   trans, fkin, ikin, threading, or any Doosan robot motion/control topic.
-  Also activate when the user wants to generate Doosan robot code, debug DRFL/DRL
-  programs, or uses keywords like "두산 로봇", "두산 로보틱스", "DRFL", "DRL",
-  "CDRFLEx", "두산 협동로봇", "도산로봇".
-argument-hint: [함수명 | 기능 키워드 | code:<작업설명> | workflow:<주제> | debug]
+  Also activate when the user asks about ROS2 node design for Doosan robots,
+  DSR_ROBOT2, DR_init, dsr_msgs2, doosan-robot2, ROS2 service/action/topic patterns,
+  Action Client H2R, ServolStream, ServojStream, RT stream control, MoveIt2 integration,
+  realtime_control, Background Executor pattern, multithreaded node design,
+  or uses keywords like "두산 로봇", "두산 로보틱스", "DRFL", "DRL",
+  "CDRFLEx", "두산 협동로봇", "도산로봇", "ROS2 두산", "DSR_ROBOT2", "doosan-robot2".
+argument-hint: [함수명 | 기능 키워드 | code:<작업설명> | workflow:<주제> | debug | ros2:<패턴명>]
 allowed-tools: [Read, Write, Edit, Glob, Grep, Bash]
 ---
 
@@ -1173,3 +1176,769 @@ drfl.set_on_monitoring_ctrl_io([](const LPMONITORING_CTRL_IO pData) {
 | `read_data_rt` nullptr | RT 미시작 or 패킷 미수신 | `start_rt_control()` 후 약 100ms 대기 |
 | DRL servoj 진동 | `time` 너무 짧음 | `time >= 0.01` (10ms) 권장 |
 | 힘 제어 불안정 | 강성값 너무 높음 | 병진 1500~2500 N/m, 회전 100~200 N·m/rad |
+
+---
+
+# PART 3 — ROS2 노드 설계 패턴 (doosan-robot2)
+
+> 출처: `doosan-robot2` 레포지토리 + Notion "두산 ROS2 동작 Sequence" 문서 분석
+
+---
+
+## 3-0. 두산 ROS2 아키텍처 개요
+
+두산 ROS2 환경(`doosan-robot2`)은 일반 ROS2 프로그래밍과 달리 **세 영역**이 공존하는 구조입니다.
+
+```
+┌─────────────────────────────────────────────────────┐
+│  👤  Main Thread (사용자 영역)                        │
+│       rclpy.init() → DR_init 노드 등록                │
+│       movej() 호출 → [BLOCKING] 완료 대기             │
+│                        ↓ ↑                           │
+│  📚  DSR_ROBOT2 라이브러리 영역                        │
+│       사용자 명령을 ROS2 서비스 메시지로 변환           │
+│       DR_init.__dsr__node 사용해 실제 통신 수행        │
+│                        ↓ ↑                           │
+│  ⚙️   Internal Executor (Background Thread)           │
+│       spin_once 루프 — 사용자가 spin() 안 불러도 동작  │
+│       JointStates / I/O 등 실시간 콜백 처리            │
+└─────────────────────────────────────────────────────┘
+```
+
+**핵심 원칙:**
+- 사용자는 `executor.spin()`을 직접 호출하지 않아도 된다 — 라이브러리가 내부 스레드로 처리
+- `movej` 같은 모션 함수는 **Blocking** — 로봇이 완료 신호를 보낼 때까지 다음 줄 실행 안 됨
+- 이동 중에도 Background Executor는 계속 돌아가므로 실시간 상태 읽기 가능
+- 이동 중 병렬 로직 필요 시 → `threading.Thread`를 별도로 생성
+
+---
+
+## 3-1. DSR_ROBOT2 초기화 패턴 (필수)
+
+모든 두산 ROS2 Python 노드의 공통 초기화 절차:
+
+```python
+import rclpy
+import DR_init
+
+ROBOT_ID    = "dsr01"   # 네임스페이스 (컨트롤러 설정과 일치해야 함)
+ROBOT_MODEL = "m1013"   # 로봇 모델명
+
+# 1단계: DR_init 전역 변수에 ID/모델 설정 (import 전에 반드시 수행)
+DR_init.__dsr__id    = ROBOT_ID
+DR_init.__dsr__model = ROBOT_MODEL
+
+def main(args=None):
+    rclpy.init(args=args)
+
+    # 2단계: 네임스페이스 포함 노드 생성
+    node = rclpy.create_node('my_node_name', namespace=ROBOT_ID)
+
+    # 3단계: 노드를 DR_init에 등록 (DSR_ROBOT2 import 전에 반드시 수행)
+    DR_init.__dsr__node = node
+
+    # 4단계: DSR_ROBOT2 함수 import (노드 등록 후에만 가능)
+    try:
+        from DSR_ROBOT2 import movej, movel, set_velj, set_accj, set_robot_mode
+        from DSR_ROBOT2 import posj, posx, posb
+        from DSR_ROBOT2 import ROBOT_MODE_AUTONOMOUS, DR_BASE, DR_TOOL
+    except ImportError as e:
+        print(f"Error importing DSR_ROBOT2: {e}")
+        return
+
+    # 5단계: 로봇 모드 설정
+    set_robot_mode(ROBOT_MODE_AUTONOMOUS)
+
+    # 이후 제어 로직...
+    rclpy.shutdown()
+```
+
+> **주의**: `DR_init.__dsr__node = node` 를 설정하기 **전**에 `from DSR_ROBOT2 import ...` 하면
+> 서비스 클라이언트 생성 시 `g_node = None` 이어서 AttributeError 발생.
+
+---
+
+## 3-2. 패턴 1 — DRL 스타일 Blocking 노드 (가장 기본)
+
+컨트롤러 DRL과 동일한 순차 실행 스타일. 가장 단순하고 권장되는 방식.
+
+```python
+import rclpy
+import DR_init
+
+ROBOT_ID    = "dsr01"
+ROBOT_MODEL = "m1013"
+DR_init.__dsr__id    = ROBOT_ID
+DR_init.__dsr__model = ROBOT_MODEL
+
+def main(args=None):
+    rclpy.init(args=args)
+    node = rclpy.create_node('drl_style_node', namespace=ROBOT_ID)
+    DR_init.__dsr__node = node
+
+    from DSR_ROBOT2 import (movej, movel, movec, moveb,
+                             set_velj, set_accj, set_velx, set_accx,
+                             set_robot_mode, posj, posx, posb,
+                             DR_BASE, DR_TOOL, DR_MV_MOD_ABS,
+                             ROBOT_MODE_AUTONOMOUS)
+
+    set_robot_mode(ROBOT_MODE_AUTONOMOUS)
+    set_velj(30)
+    set_accj(60)
+    set_velx(100, 50)
+    set_accx(200, 100)
+
+    home = posj(0, 0, 90, 0, 90, 0)
+    pick = posx(400, 200, 300, 0, 180, 0)
+    place = posx(400, -200, 300, 0, 180, 0)
+
+    while rclpy.ok():
+        movej(home, vel=60, acc=60)
+        movel(pick,  vel=[100, 50], acc=[200, 100])
+        movel(place, vel=[100, 50], acc=[200, 100])
+
+    rclpy.shutdown()
+
+if __name__ == "__main__":
+    main()
+```
+
+**특징:**
+- `while rclpy.ok()` 루프 — 각 movej/movel은 완료될 때까지 블로킹
+- 별도 spin() 불필요 — Background Executor가 내부적으로 처리
+- 시간 기반 이동: `movej(pos, v=0, a=0, t=3.0)` — vel/acc=0이면 `t`(초) 기준
+
+---
+
+## 3-3. 패턴 2 — Multithreaded 노드 (이동 중 병렬 처리 필요 시)
+
+```
+┌──────────────────────────────────────────────────────┐
+│  👤  Main Thread                                      │
+│       rclpy.init() & DR_init 노드 등록                 │
+│       rclpy.spin(node) 유지 (또는 spin_until_done)     │
+│                                                       │
+│  🚀  Task Thread (perform_task)                       │
+│       movej() 호출 → [Task Thread만 Blocking]          │
+│       Main은 spin 유지 → Executor 계속 동작            │
+└──────────────────────────────────────────────────────┘
+```
+
+```python
+import rclpy
+import threading
+import DR_init
+
+ROBOT_ID    = "dsr01"
+ROBOT_MODEL = "m1013"
+DR_init.__dsr__id    = ROBOT_ID
+DR_init.__dsr__model = ROBOT_MODEL
+
+def perform_task():
+    """별도 스레드에서 실행되는 로봇 제어 로직"""
+    from DSR_ROBOT2 import movej, movel, get_current_posj, posj, posx
+    from DSR_ROBOT2 import set_velj, set_accj
+
+    set_velj(30)
+    set_accj(60)
+
+    home = posj(0, 0, 90, 0, 90, 0)
+    target = posx(500, 0, 400, 0, 180, 0)
+
+    movej(home, vel=60, acc=60)     # Task Thread만 블로킹
+    # Main Thread는 spin() 유지 중 → 실시간 상태 계속 업데이트
+
+    current = get_current_posj()    # 최신 데이터 즉시 조회 가능
+    print(f"Current joint: {current}")
+
+    movel(target, vel=[100, 50], acc=[200, 100])
+
+def main(args=None):
+    rclpy.init(args=args)
+    node = rclpy.create_node('multithreaded_node', namespace=ROBOT_ID)
+    DR_init.__dsr__node = node
+
+    from DSR_ROBOT2 import set_robot_mode, ROBOT_MODE_AUTONOMOUS
+    set_robot_mode(ROBOT_MODE_AUTONOMOUS)
+
+    # Task Thread 시작
+    task_thread = threading.Thread(target=perform_task, daemon=True)
+    task_thread.start()
+
+    try:
+        rclpy.spin(node)   # Main Thread: Executor 유지
+    except KeyboardInterrupt:
+        pass
+    finally:
+        rclpy.shutdown()
+
+if __name__ == "__main__":
+    main()
+```
+
+**언제 사용:**
+- 이동 중 카메라/센서 데이터를 실시간으로 읽어야 할 때
+- 여러 로봇을 동시에 제어할 때 (스레드 분리)
+- 이동 중 조건 감시(force/IO)와 병행 처리 필요 시
+
+---
+
+## 3-4. 패턴 3 — Action Client (H2R) 패턴
+
+두산은 Human-to-Robot 인터페이스로 ROS2 Action을 제공합니다.
+피드백(현재 위치)을 받으며 목표 취소가 가능한 비동기 방식입니다.
+
+```python
+import rclpy
+from rclpy.action import ActionClient
+from rclpy.node import Node
+from dsr_msgs2.action import MovejH2r   # MovelH2r, JogH2r 도 동일 구조
+
+class MovejH2rClient(Node):
+    def __init__(self):
+        super().__init__('movej_h2r_client')
+        # 액션 토픽: {ROBOT_ID}/motion/movej_h2r
+        self._client = ActionClient(self, MovejH2r, 'dsr01/motion/movej_h2r')
+        self._goal_handle = None
+
+    def send_goal(self, pos, vel, acc):
+        goal = MovejH2r.Goal()
+        goal.target_pos = pos   # float64[6]
+        goal.target_vel = vel   # float64[6]
+        goal.target_acc = acc   # float64[6]
+
+        self._client.wait_for_server()
+        future = self._client.send_goal_async(goal,
+                     feedback_callback=self.on_feedback)
+        future.add_done_callback(self.on_goal_response)
+
+    def on_goal_response(self, future):
+        self._goal_handle = future.result()
+        if not self._goal_handle.accepted:
+            self.get_logger().warn('Goal rejected')
+            return
+        self._goal_handle.get_result_async().add_done_callback(self.on_result)
+
+    def on_result(self, future):
+        result = future.result().result
+        self.get_logger().info(f'Done: success={result.success}')
+
+    def on_feedback(self, msg):
+        self.get_logger().info(f'Pos: {msg.feedback.pos}')
+
+    def cancel(self):
+        if self._goal_handle and self._goal_handle.accepted:
+            fut = self._goal_handle.cancel_goal_async()
+            rclpy.spin_until_future_complete(self, fut, timeout_sec=2.0)
+
+def main(args=None):
+    rclpy.init(args=args)
+    client = MovejH2rClient()
+    client.send_goal(
+        pos=[0.0, 0.0, 90.0, 0.0, 90.0, 0.0],
+        vel=[30.0]*6,
+        acc=[30.0]*6
+    )
+    try:
+        rclpy.spin(client)
+    except KeyboardInterrupt:
+        client.cancel()
+    finally:
+        rclpy.shutdown()
+```
+
+**지원 액션 목록:**
+
+| 액션 이름 | 토픽 | 설명 |
+|-----------|------|------|
+| `MovejH2r` | `{id}/motion/movej_h2r` | 관절 공간 이동 |
+| `MovelH2r` | `{id}/motion/movel_h2r` | 직선 이동 (target_pos: float64[6], vel/acc: float64[2]) |
+| `JogH2r`   | `{id}/motion/jog_h2r`   | 조그 이동 (jog_axis, move_reference, velocity) |
+
+---
+
+## 3-5. 패턴 4 — Topic Stream 제어 (ServoL / ServoJ)
+
+실시간 스트리밍 제어 — 토픽 발행으로 연속 위치 커맨드 전송.
+비전 서보잉, 컨베이어 추종, 외부 센서 추종에 사용.
+
+```python
+import rclpy
+from rclpy.node import Node
+from dsr_msgs2.msg import ServolStream, ServojStream
+from std_msgs.msg import Float32MultiArray
+
+class VisualServoNode(Node):
+    def __init__(self):
+        super().__init__('visual_servo')
+
+        # 목표 포즈 구독 (카메라/마커 등 외부 소스)
+        self.pose_sub = self.create_subscription(
+            Float32MultiArray, '/target/pose',
+            self.pose_callback, 10)
+
+        # ServoL 스트림 발행 — {ROBOT_ID}/servol_stream
+        self.servol_pub = self.create_publisher(
+            ServolStream, '/dsr01/servol_stream', 10)
+
+    def pose_callback(self, msg):
+        cmd = ServolStream()
+        cmd.pos = list(msg.data)        # float64[6]: [x,y,z,rx,ry,rz]
+        cmd.vel = [500.0, 180.0]        # [선속도 mm/s, 각속도 deg/s]
+        cmd.acc = [875.0, 180.0]
+        cmd.time = 0.0                  # 0 = 최대한 빠르게
+        self.servol_pub.publish(cmd)
+
+def main(args=None):
+    rclpy.init(args=args)
+    node = VisualServoNode()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        rclpy.shutdown()
+```
+
+**스트림 토픽 전체 목록:**
+
+| 토픽 | 메시지 타입 | 설명 |
+|------|------------|------|
+| `{id}/servoj_stream` | `ServojStream` | 관절 공간 서보 스트림 (pos[6], vel[6], acc[6], time) |
+| `{id}/servol_stream` | `ServolStream` | 직교 공간 서보 스트림 (pos[6], vel[2], acc[2], time) |
+| `{id}/speedj_stream` | `SpeedjStream` | 관절 속도 스트림 |
+| `{id}/speedl_stream` | `SpeedlStream` | 직교 속도 스트림 |
+| `{id}/servoj_rt_stream` | `ServojRtStream` | RT 관절 서보 (1kHz) |
+| `{id}/servol_rt_stream` | `ServolRtStream` | RT 직교 서보 (1kHz) |
+| `{id}/torque_rt_stream` | `TorqueRtStream` | RT 토크 제어 (1kHz) |
+| `{id}/alter_motion_stream` | `AlterMotionStream` | 모션 보정 스트림 |
+
+---
+
+## 3-6. 패턴 5 — MoveIt2 연동 노드
+
+MoveIt2 Planning Scene을 구독하여 두산 서비스로 실행:
+
+```python
+import rclpy
+from rclpy.node import Node
+from moveit_msgs.msg import PlanningScene
+from dsr_msgs2.srv import MoveJoint
+from sensor_msgs.msg import JointState
+import math
+
+class MoveIt2Follower(Node):
+    def __init__(self, robot_id='dsr01'):
+        super().__init__('dsr_moveit2')
+        self.robot_id = robot_id
+
+        # MoveIt2 Planning Scene 구독
+        self.scene_sub = self.create_subscription(
+            PlanningScene, '/monitored_planning_scene',
+            self.on_plan, 10)
+
+        # 두산 MoveJoint 서비스 클라이언트
+        self.move_client = self.create_client(
+            MoveJoint, f'{robot_id}/motion/move_joint')
+
+        # 관절 상태 모니터링
+        self.js_sub = self.create_subscription(
+            JointState, f'{robot_id}/joint_states',
+            self.on_joint_state, 10)
+
+    def on_plan(self, msg):
+        # rad → deg 변환
+        positions = msg.robot_state.joint_state.position
+        deg_pos = [math.degrees(p) for p in positions]
+
+        req = MoveJoint.Request()
+        req.pos = deg_pos
+        req.time = 0.7       # 이동 시간 [sec]
+        req.sync_type = 1    # 동기 실행
+
+        future = self.move_client.call_async(req)
+        future.add_done_callback(self.on_response)
+
+    def on_joint_state(self, msg):
+        # 현재 관절 상태 처리
+        pass
+
+    def on_response(self, future):
+        result = future.result()
+        self.get_logger().info(f'Success: {result.success}')
+
+def main(args=None):
+    rclpy.init(args=args)
+    node = MoveIt2Follower('dsr01')
+    rclpy.spin(node)
+    rclpy.shutdown()
+```
+
+---
+
+## 3-7. 패턴 6 — RT(실시간) 제어 C++ 노드 (1kHz)
+
+CPU 어피니티 + SCHED_FIFO + 1kHz wall_timer 조합의 실시간 제어:
+
+```cpp
+#include "rclcpp/rclcpp.hpp"
+#include "dsr_msgs2/msg/servoj_rt_stream.hpp"
+#include "dsr_msgs2/msg/servol_rt_stream.hpp"
+#include "dsr_msgs2/msg/torque_rt_stream.hpp"
+#include "dsr_msgs2/srv/read_data_rt.hpp"
+#include <pthread.h>
+
+// ── 1. 상태 읽기 노드 (ReadDataRt 서비스 클라이언트, 3kHz) ──────────────
+class ReadDataRtNode : public rclcpp::Node {
+public:
+    ReadDataRtNode() : Node("ReadDataRt") {
+        client_ = create_client<dsr_msgs2::srv::ReadDataRt>(
+                      "/dsr01/realtime/read_data_rt");
+        // 별도 스레드에서 3kHz 폴링
+        client_thread_ = std::thread(&ReadDataRtNode::poll, this);
+    }
+private:
+    void poll() {
+        rclcpp::Rate rate(3000);
+        while (rclcpp::ok()) {
+            rate.sleep();
+            auto req = std::make_shared<dsr_msgs2::srv::ReadDataRt::Request>();
+            auto future = client_->async_send_request(req);
+            auto resp = future.get();
+            // resp->data.actual_joint_position[i] 등 전역 구조체에 저장
+        }
+    }
+    rclcpp::Client<dsr_msgs2::srv::ReadDataRt>::SharedPtr client_;
+    std::thread client_thread_;
+};
+
+// ── 2. 토크 제어 노드 (1kHz wall_timer 발행) ─────────────────────────────
+class TorqueRtNode : public rclcpp::Node {
+public:
+    TorqueRtNode() : Node("TorqueRt") {
+        pub_ = create_publisher<dsr_msgs2::msg::TorqueRtStream>(
+                   "/dsr01/torque_rt_stream", 10);
+        timer_ = create_wall_timer(
+                     std::chrono::microseconds(1000),   // 1ms = 1kHz
+                     std::bind(&TorqueRtNode::publish, this));
+    }
+private:
+    void publish() {
+        // ── 사용자 제어 로직 ──
+        double tor[6] = {};
+        // tor[i] = gravity_compensation + your_torque_command
+        // ─────────────────────
+        auto msg = dsr_msgs2::msg::TorqueRtStream();
+        msg.tor  = {tor[0], tor[1], tor[2], tor[3], tor[4], tor[5]};
+        msg.time = 0.0;
+        pub_->publish(msg);
+    }
+    rclcpp::Publisher<dsr_msgs2::msg::TorqueRtStream>::SharedPtr pub_;
+    rclcpp::TimerBase::SharedPtr timer_;
+};
+
+// ── 3. main: CPU 어피니티 + 스케줄링 + 각 노드 별도 executor ─────────────
+int main(int argc, char** argv) {
+    // CPU 2,3번 코어에 고정 (비트마스크 0b1100)
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    CPU_SET(2, &cpuset);
+    CPU_SET(3, &cpuset);
+    pthread_setaffinity_np(pthread_self(), sizeof(cpuset), &cpuset);
+
+    rclcpp::init(argc, argv);
+
+    auto node1 = std::make_shared<ReadDataRtNode>();
+    rclcpp::executors::SingleThreadedExecutor exec1;
+    exec1.add_node(node1);
+    auto t1 = std::thread([&](){ exec1.spin(); });
+
+    auto node2 = std::make_shared<TorqueRtNode>();
+    rclcpp::executors::SingleThreadedExecutor exec2;
+    exec2.add_node(node2);
+    auto t2 = std::thread([&](){ exec2.spin(); });
+
+    t1.join();
+    t2.join();
+    rclcpp::shutdown();
+    return 0;
+}
+// 실행: ros2 run dsr_realtime_control realtime_control --sched SCHED_FIFO --priority 80
+// 확인: ps -C realtime_control -L -o tid,comm,rtprio,cls,psr
+```
+
+---
+
+## 3-8. ROS2 서비스 / 토픽 / 액션 네임스페이스 완전 참조표
+
+모든 이름은 `{ROBOT_ID}/` 네임스페이스 하에 위치합니다 (예: `dsr01/`).
+
+### 모션 서비스
+
+| 서비스 이름 | 타입 | 설명 |
+|------------|------|------|
+| `motion/move_joint` | `MoveJoint` | movej |
+| `motion/move_line` | `MoveLine` | movel |
+| `motion/move_jointx` | `MoveJointx` | movejx |
+| `motion/move_circle` | `MoveCircle` | movec |
+| `motion/move_spline_joint` | `MoveSplineJoint` | movesj |
+| `motion/move_spline_task` | `MoveSplineTask` | movesx |
+| `motion/move_blending` | `MoveBlending` | moveb |
+| `motion/move_spiral` | `MoveSpiral` | move_spiral |
+| `motion/move_periodic` | `MovePeriodic` | move_periodic |
+| `motion/move_home` | `MoveHome` | move_home |
+| `motion/move_wait` | `MoveWait` | move_wait |
+| `motion/jog` | `Jog` | jog |
+| `motion/jog_multi` | `JogMulti` | jog_multi |
+| `motion/trans` | `Trans` | trans |
+| `motion/fkin` | `Fkin` | fkin |
+| `motion/ikin` | `Ikin` | ikin |
+| `motion/check_motion` | `CheckMotion` | check_motion |
+| `motion/change_operation_speed` | `ChangeOperationSpeed` | - |
+| `motion/enable_alter_motion` | `EnableAlterMotion` | - |
+| `motion/alter_motion` | `AlterMotion` | - |
+| `motion/disable_alter_motion` | `DisableAlterMotion` | - |
+| `motion/set_singularity_handling` | `SetSingularityHandling` | - |
+
+### 시스템 서비스
+
+| 서비스 이름 | 타입 |
+|------------|------|
+| `system/set_robot_mode` | `SetRobotMode` |
+| `system/get_robot_mode` | `GetRobotMode` |
+| `system/get_robot_state` | `GetRobotState` |
+| `system/get_current_pose` | `GetCurrentPose` |
+| `system/change_collision_sensitivity` | `ChangeCollisionSensitivity` |
+| `system/get_last_alarm` | `GetLastAlarm` |
+| `system/set_safety_mode` | `SetSafetyMode` |
+
+### 상태 조회 서비스 (aux_control)
+
+| 서비스 이름 | 설명 |
+|------------|------|
+| `aux_control/get_current_posj` | 현재 관절 위치 |
+| `aux_control/get_current_posx` | 현재 TCP 직교 위치 |
+| `aux_control/get_current_velj` | 현재 관절 속도 |
+| `aux_control/get_current_velx` | 현재 직교 속도 |
+| `aux_control/get_desired_posj` | 목표 관절 위치 |
+| `aux_control/get_desired_posx` | 목표 직교 위치 |
+| `aux_control/get_joint_torque` | 관절 토크 |
+| `aux_control/get_external_torque` | 외력 토크 |
+| `aux_control/get_tool_force` | 툴 힘/모멘트 |
+| `aux_control/get_current_rotm` | 현재 회전 행렬 |
+| `aux_control/get_current_solution_space` | 현재 솔루션 스페이스 |
+| `aux_control/get_robot_link_info` | 링크 정보 |
+
+### 힘/컴플라이언스 서비스 (force)
+
+| 서비스 이름 | 설명 |
+|------------|------|
+| `force/task_compliance_ctrl` | 컴플라이언스 제어 시작 |
+| `force/release_compliance_ctrl` | 컴플라이언스 제어 해제 |
+| `force/set_stiffnessx` | 강성 설정 |
+| `force/set_desired_force` | 목표 힘 설정 |
+| `force/release_force` | 힘 제어 해제 |
+| `force/check_force_condition` | 힘 조건 확인 |
+| `force/check_position_condition` | 위치 조건 확인 |
+| `force/calc_coord` | 좌표 계산 |
+| `force/set_user_cart_coord1/2/3` | 사용자 좌표계 설정 |
+| `force/coord_transform` | 좌표 변환 |
+
+### I/O 서비스 (io)
+
+| 서비스 이름 | 설명 |
+|------------|------|
+| `io/set_ctrl_box_digital_output` | 디지털 출력 설정 |
+| `io/get_ctrl_box_digital_input` | 디지털 입력 읽기 |
+| `io/set_tool_digital_output` | 툴 디지털 출력 |
+| `io/get_tool_digital_input` | 툴 디지털 입력 |
+| `io/set_ctrl_box_analog_output` | 아날로그 출력 |
+| `io/get_ctrl_box_analog_input` | 아날로그 입력 |
+| `io/set_ctrl_box_analog_output_type` | 아날로그 출력 모드 |
+| `io/set_ctrl_box_analog_input_type` | 아날로그 입력 모드 |
+
+### 실시간(RT) 서비스 (realtime)
+
+| 서비스 이름 | 설명 |
+|------------|------|
+| `realtime/connect_rt_control` | RT 제어 연결 |
+| `realtime/disconnect_rt_control` | RT 제어 해제 |
+| `realtime/start_rt_control` | RT 제어 시작 |
+| `realtime/stop_rt_control` | RT 제어 정지 |
+| `realtime/set_rt_control_input` | RT 입력 설정 |
+| `realtime/set_rt_control_output` | RT 출력 설정 |
+| `realtime/read_data_rt` | RT 상태 데이터 읽기 |
+| `realtime/write_data_rt` | RT 외력/IO 쓰기 |
+| `realtime/set_velj_rt` | RT 관절 속도 설정 |
+| `realtime/set_accj_rt` | RT 관절 가속도 설정 |
+| `realtime/set_velx_rt` | RT 직교 속도 설정 |
+| `realtime/set_accx_rt` | RT 직교 가속도 설정 |
+
+### DRL 서비스 (drl)
+
+| 서비스 이름 | 설명 |
+|------------|------|
+| `drl/drl_start` | DRL 스크립트 시작 |
+| `drl/drl_stop` | DRL 정지 |
+| `drl/drl_pause` | DRL 일시정지 |
+| `drl/drl_resume` | DRL 재개 |
+| `drl/get_drl_state` | DRL 상태 조회 |
+
+### 액션 (Actions)
+
+| 액션 이름 | 메시지 타입 | Goal 필드 |
+|----------|------------|-----------|
+| `motion/movej_h2r` | `MovejH2r` | target_pos[6], target_vel[6], target_acc[6] |
+| `motion/movel_h2r` | `MovelH2r` | target_pos[6], target_vel[2], target_acc[2] |
+| `motion/jog_h2r`   | `JogH2r`   | jog_axis(int), move_reference(int), velocity(float) |
+
+### 구독 토픽 (Subscribe)
+
+| 토픽 이름 | 타입 | 설명 |
+|----------|------|------|
+| `{id}/joint_states` | `sensor_msgs/JointState` | 관절 각도/속도/토크 실시간 |
+
+---
+
+## 3-9. MoveJoint 서비스 Request 필드 참조
+
+`dsr_msgs2/srv/MoveJoint` — `motion/move_joint` 에서 사용:
+
+```python
+req = MoveJoint.Request()
+req.pos       = [0.0]*6    # 목표 관절각 [deg] float64[6]
+req.vel       = 30.0       # 속도 [deg/s] float64 (또는 0=전역값)
+req.acc       = 60.0       # 가속도 [deg/s²]
+req.time      = 0.0        # 이동 시간 [sec] (0=vel/acc 기반)
+req.radius    = 0.0        # 블렌딩 반경 [mm]
+req.mode      = 0          # DR_MV_MOD_ABS(0) | DR_MV_MOD_REL(1)
+req.blend_type= 0          # 블렌딩 타입
+req.sync_type = 0          # 0=비동기 | 1=동기 (완료 대기)
+```
+
+`dsr_msgs2/srv/MoveLine` — `motion/move_line`:
+
+```python
+req = MoveLine.Request()
+req.pos       = [0.0]*6    # 목표 TCP 위치 [mm, deg] float64[6]
+req.vel       = [0.0, 0.0] # [선속도 mm/s, 각속도 deg/s] float64[2]
+req.acc       = [0.0, 0.0]
+req.time      = 0.0
+req.radius    = 0.0
+req.ref       = 0          # DR_BASE=0, DR_TOOL=1, DR_WORLD=2
+req.mode      = 0
+req.blend_type= 0
+req.sync_type = 0
+```
+
+---
+
+## 3-10. ROS2 노드 설계 패턴 선택 가이드
+
+```
+작업 유형에 따른 패턴 선택:
+
+단순 순차 제어 (Pick & Place, 반복 작업)
+  → 패턴 1: DRL 스타일 Blocking 노드
+
+이동 중 센서 데이터 처리 / 조건 감시
+  → 패턴 2: Multithreaded (Task Thread + rclpy.spin)
+
+외부 시스템 연동 / 취소 가능한 비동기 모션
+  → 패턴 3: Action Client H2R
+
+비전 서보잉 / 실시간 위치 추종
+  → 패턴 4: Topic Stream (ServolStream / ServojStream)
+
+MoveIt2 경로 계획 + 두산 실행
+  → 패턴 5: MoveIt2 연동 노드 (PlanningScene 구독 + MoveJoint 서비스)
+
+1kHz 실시간 토크/위치 제어
+  → 패턴 6: RT 제어 C++ 노드 (wall_timer 1ms + CPU 어피니티)
+```
+
+---
+
+## 3-11. ROS2 두산 노드 완전 예제 — 비전 서보잉 (Visual Servoing)
+
+마커 감지 → ServoL 스트림으로 추종하는 완전한 ROS2 노드:
+
+```python
+#!/usr/bin/env python3
+import rclpy
+from rclpy.node import Node
+from dsr_msgs2.msg import ServolStream
+from std_msgs.msg import Int32, Float32MultiArray
+import DR_init
+
+ROBOT_ID    = "dsr01"
+ROBOT_MODEL = "m1013"
+DR_init.__dsr__id    = ROBOT_ID
+DR_init.__dsr__model = ROBOT_MODEL
+
+class VisualServoNode(Node):
+    def __init__(self):
+        super().__init__('visual_servo_node')
+        # 마커 ID / 포즈 구독
+        self.id_sub   = self.create_subscription(
+            Int32, '/marker/id', self.on_id, 10)
+        self.pose_sub = self.create_subscription(
+            Float32MultiArray, '/marker/pose', self.on_pose, 10)
+
+        # ServoL 스트림 발행
+        self.pub = self.create_publisher(
+            ServolStream, f'/{ROBOT_ID}/servol_stream', 10)
+
+        self.current_id   = None
+        self.current_pose = None
+
+    def on_id(self, msg):
+        self.current_id = msg.data
+        self._try_publish()
+
+    def on_pose(self, msg):
+        self.current_pose = list(msg.data)
+        self._try_publish()
+
+    def _try_publish(self):
+        if self.current_id is None or self.current_pose is None:
+            return
+        if self.current_id == 1000:   # 마커 미감지 코드
+            self.get_logger().warn('Marker lost — stopping stream')
+            return
+
+        cmd = ServolStream()
+        cmd.pos  = self.current_pose   # [x,y,z,rx,ry,rz]
+        cmd.vel  = [500.0, 180.0]
+        cmd.acc  = [875.0, 180.0]
+        cmd.time = 0.0
+        self.pub.publish(cmd)
+
+def main(args=None):
+    rclpy.init(args=args)
+    DR_init.__dsr__node = rclpy.create_node('_init_node', namespace=ROBOT_ID)
+    node = VisualServoNode()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        rclpy.shutdown()
+
+if __name__ == "__main__":
+    main()
+```
+
+---
+
+## 3-12. ROS2 두산 노드 디버깅 팁
+
+| 증상 | 원인 | 해결 |
+|------|------|------|
+| `AttributeError: 'NoneType' object has no attribute 'create_client'` | `DR_init.__dsr__node` 설정 전 DSR_ROBOT2 import | 노드 생성 후 `DR_init.__dsr__node = node` 먼저 |
+| 서비스 응답 없음 (timeout) | dsr_control2 노드 미실행 | `ros2 node list` 로 `/dsr01/dsr_control_node` 확인 |
+| Action Goal rejected | ROBOT_MODE_MANUAL 상태 | `set_robot_mode(ROBOT_MODE_AUTONOMOUS)` |
+| ServoL/J 스트림 무반응 | 네임스페이스 불일치 | 토픽 이름 `/dsr01/servol_stream` (슬래시 포함) 확인 |
+| RT stream 진동 | 발행 주기 불규칙 | `wall_timer` 1ms 사용, `spin_some` 대신 전용 executor |
+| `rclpy.spin()` 차단됨 | Task Thread에서도 spin 호출 | Main Thread에서만 `rclpy.spin()`, Task Thread는 movej만 |
+| Action feedback 미수신 | `feedback_callback` 미등록 | `send_goal_async(goal, feedback_callback=fn)` |
