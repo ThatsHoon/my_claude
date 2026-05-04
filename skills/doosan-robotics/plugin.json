@@ -1,8 +1,0 @@
-{
-  "name": "doosan-robotics",
-  "description": "Doosan Robotics DRFL C++ API reference and code generation skill. Covers all motion, I/O, force/compliance, and RT-stream functions from the GL013303 API manual.",
-  "author": {
-    "name": "ErifKim",
-    "email": "gagea45@gmail.com"
-  }
-}

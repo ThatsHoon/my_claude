@@ -1,0 +1,23 @@
+{
+  "_comment": "현재 PC 의 ~/.claude/plugins/installed_plugins.json 에서 추출한 마켓플레이스 플러그인 목록. ros2-architect, doosan-robotics 는 로컬 스킬이라 여기에 포함되지 않는다.",
+  "marketplace": "claude-plugins-official",
+  "plugins": [
+    "frontend-design",
+    "context7",
+    "skill-creator",
+    "playwright",
+    "code-simplifier",
+    "github",
+    "claude-md-management",
+    "superpowers",
+    "feature-dev",
+    "security-guidance",
+    "serena",
+    "slack",
+    "chrome-devtools-mcp",
+    "huggingface-skills",
+    "playground",
+    "code-review",
+    "supabase"
+  ]
+}
