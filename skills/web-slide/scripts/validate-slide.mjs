@@ -61,6 +61,69 @@ if (slideViewBoxes.length === 0) {
   }
 }
 
+// ─── 1.5 aspect-ratio CSS 검사 (16:9 strict, SKILL.md §5.2) ────
+// .slide / .slide-frame 의 aspect-ratio 가 16/9 또는 1320/742 만 허용.
+// 1320/820, 1320/920 같이 비-16:9 비율 modifier 발견 시 ERROR.
+const aspectMatches = [...html.matchAll(/aspect-ratio\s*:\s*([0-9./\s]+)\s*[;}]/g)];
+const badRatios = [];
+for (const m of aspectMatches) {
+  const v = m[1].trim().replace(/\s+/g, ' ');
+  const ok = (v === '16 / 9' || v === '16/9' || v === '1320 / 742' || v === '1320/742');
+  if (!ok) badRatios.push(v);
+}
+if (badRatios.length > 0) {
+  console.log(`${RED}✗ ERROR:${RESET} non-16:9 aspect-ratio CSS found (${badRatios.length}). SKILL.md §5.2 — slide 컨테이너는 16:9 strict.`);
+  badRatios.slice(0, 5).forEach(v => console.log(`    found: aspect-ratio: ${v}`));
+  errors++;
+} else if (aspectMatches.length > 0) {
+  console.log(`${GREEN}✓${RESET} all aspect-ratio CSS are 16/9 (${aspectMatches.length} rule${aspectMatches.length > 1 ? 's' : ''})`);
+}
+
+// ─── 1.6 emoji 검사 (SKILL.md §5.4) ─────────────────────────────
+// SVG <text> element 안에 emoji (pictograph) 가 있으면 ERROR.
+// Brand 표현 시 simple-icons SVG / lucide 사용해야 함.
+const emojiRe = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{1F000}-\u{1F2FF}]/u;
+let bodyForEmoji = html.replace(/<style[\s\S]*?<\/style>/g, '');
+const emojiFound = [];
+// SVG text content
+for (const m of bodyForEmoji.matchAll(/<text\b[^>]*>([\s\S]*?)<\/text>/g)) {
+  if (emojiRe.test(m[1])) emojiFound.push(m[1].slice(0, 40));
+}
+// JS svg('text', { text: '...' }) — heuristic
+for (const m of bodyForEmoji.matchAll(/text\s*:\s*['"]([^'"]+)['"]/g)) {
+  if (emojiRe.test(m[1])) emojiFound.push(m[1].slice(0, 40));
+}
+if (emojiFound.length > 0) {
+  console.log(`${RED}✗ ERROR:${RESET} emoji in SVG content (${emojiFound.length}). SKILL.md §5.4 — 브랜드/아이콘은 simple-icons SVG path 또는 lucide 사용.`);
+  [...new Set(emojiFound)].slice(0, 5).forEach(s => console.log(`    found: "${s}"`));
+  errors++;
+}
+
+// ─── 1.7 inline hex 검사 (SKILL.md §5.9, §5.17) ────────────────
+// HTML style="...#XXXXXX" 발견 시 ERROR (gradient/border-radius 예외).
+// SVG render 와 HTML static 혼합 금지 — CSS 변수만 사용.
+const bodyForInlineHex = html.replace(/<style[\s\S]*?<\/style>/g, '');
+const inlineHexFound = [];
+for (const m of bodyForInlineHex.matchAll(/style\s*=\s*["']([^"']*)["']/g)) {
+  const style = m[1];
+  if (/gradient|border-radius/.test(style)) continue;
+  const hexMatch = style.match(/#[0-9A-Fa-f]{3,6}\b/);
+  if (hexMatch) inlineHexFound.push(`${hexMatch[0]} in style="${style.slice(0, 50)}..."`);
+}
+if (inlineHexFound.length > 0) {
+  console.log(`${RED}✗ ERROR:${RESET} inline hex color (${inlineHexFound.length}). SKILL.md §5.9 — CSS 변수만 사용.`);
+  inlineHexFound.slice(0, 5).forEach(s => console.log(`    found: ${s}`));
+  errors++;
+}
+
+// ─── 1.8 .tall/.taller modifier 검사 (SKILL.md §5.2, §5.17) ────
+// slide-frame.tall / slide-frame.taller 사용 시 ERROR — viewBox 비-16:9 우회 시도.
+const modifierMatches = [...html.matchAll(/slide-frame\s+(tall|taller)\b/g)];
+if (modifierMatches.length > 0) {
+  console.log(`${RED}✗ ERROR:${RESET} .slide-frame.${modifierMatches[0][1]} modifier (${modifierMatches.length}). SKILL.md §5.2 — 16:9 strict.`);
+  errors++;
+}
+
 // ─── 2. 5-way diff ─────────────────────────────────────────────
 // data-view="X" 추출
 const dataViewSet = new Set();

@@ -125,14 +125,14 @@ main { flex: 1; padding: 24px; }
 .view { display: none; }
 .view.active { display: block; }
 
+/* Slide container — 직각 사각형 + 다크 배경 (web-slide 규칙 §5.1) */
 .slide {
   width: 100%; max-width: 1320px; margin: 0 auto;
   aspect-ratio: 16 / 9; min-height: 742px;
   display: block;
   background: var(--bg-2);
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+  border-radius: 0;
+  box-shadow: 0 0 0 1px var(--line), 0 12px 32px rgba(0,0,0,0.45);
 }
 
 /* Common SVG utility classes */

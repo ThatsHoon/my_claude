@@ -87,6 +87,7 @@ main {
   padding: 24px;
 }
 
+/* Slide container — 직각 사각형 + 다크 배경 (web-slide 규칙 §5.1) */
 .slide {
   width: 100%;
   max-width: 1320px;
@@ -94,9 +95,8 @@ main {
   min-height: 742px;
   display: block;
   background: var(--bg-2);
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+  border-radius: 0;
+  box-shadow: 0 0 0 1px var(--line), 0 12px 32px rgba(0,0,0,0.45);
 }
 
 /* Common SVG utility classes */
@@ -236,7 +236,7 @@ function render() {
 
   // 예시: 큰 카드
   $content.appendChild(svg('rect', {
-    x: 30, y: 220, width: 1260, height: 480, rx: 12,
+    x: 30, y: 220, width: 1260, height: 480, rx: 0,
     fill: 'var(--bg-3)', stroke: 'var(--line-2)', 'stroke-width': 1.2,
     filter: 'drop-shadow(0 2px 8px rgba(0,0,0,0.4))',
   }));

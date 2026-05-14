@@ -1,5 +1,24 @@
 # Cheat Sheet — 한 페이지 빠른 참조
 
+## 컨테이너 디자인 (필수)
+
+- **직각 사각형** — `border-radius: 0` + 모든 `rx: 0` (SVG rect/chip 포함)
+- **다크 배경** — `background: var(--bg-2)` (#131826 톤). light 카드 금지
+- raw light hex (`#F4F2EC`, `#1a1a1a` 등) **금지** — CSS 변수만 사용
+- **viewBox 는 반드시 `0 0 1320 742` (16:9 strict)** — modifier 로 비율 깨면 안 됨
+- **글씨 크기 하한**: 카드 본문 12px, 카드 제목 14px, label 10px. 11px 이하는 footer/메타에만
+- **emoji 금지** — 브랜드/기술 스택은 simple-icons SVG 또는 lucide 사용
+- **슬라이드 영역 1500+** — 우측 메타/사이드 패널 두지 말 것 (메타는 슬라이드 안 footer strip 으로 통합)
+- **카드 padding 16-22** — 12px 사용 금지
+- **SVG element 충돌 자동 검사** — 다이어그램류 슬라이드는 detectSvgOverlap() 0 확인 (§5.12)
+- **사이드바 prefix 중복 검사** — Training/Training Result 처럼 같은 prefix 있으면 역할 분리 (§5.10)
+- **작업 종료 8단계 체크** — viewBox/aspect/hex/emoji/overlap/prefix/letterbox/validator 모두 통과 (§7.4)
+- **콘텐츠 bbox ≥ viewBox 90%** — viewBox 만 16:9 가 아니라 콘텐츠도 viewBox 채움. 빈공간은 footer strip 으로 (§5.13)
+- **슬라이드 vs 코드 진실성** — 노드/토픽/스키마 이름은 코드 grep 결과에서 복사. 추측 금지 (§5.15)
+- **TOC 압축 — 단일 도메인 통합** — 사이드바 prefix 같은 슬라이드는 라벨 명확화 + button 1개만 활성 + TAB_ORDER 동기 (§5.16)
+- **위반 자동 grep — 작업 종료 직전 강제** — viewBox/emoji/hex/modifier 4 grep 모두 0 라인 통과 후 완료 보고 (§5.17)
+- 자세히 `SKILL.md §5.1 ~ §5.17 + §6 + §7`
+
 ## viewBox + 마진
 
 ```
