@@ -65,12 +65,21 @@ Claude Code CLI 안에서:
 필요하면 `~/.claude/settings.json` 의 `enabledPlugins` 섹션을 이 파일과 일치시킨다.
 `theme` 등 다른 설정은 사용자의 PC 환경을 우선한다.
 
-## 5. 제외 (미러링 대상 아님)
+## 5. 사용자 스킬 배치
 
-다음은 **로컬 스킬**이라 이 절차로 설치하지 않는다. 사용자가 별도로 안내한다.
+`skills/` 아래의 각 스킬 폴더를 `~/.claude/skills/` 로 그대로 복사한다.
+이미 같은 이름이 있으면 사용자에게 덮어쓸지 확인.
 
-- `ros2-architect`
-- `doosan-robotics`
+| 소스 (이 레포) | 대상 경로 |
+| --- | --- |
+| `skills/web-slide/` | `~/.claude/skills/web-slide/` |
+| `skills/isaac-sim-bridge/` | `~/.claude/skills/isaac-sim-bridge/` |
+| `skills/ros2-architect/` | `~/.claude/skills/ros2-architect/` |
+| `skills/doosan-robotics/` | `~/.claude/skills/doosan-robotics/` |
+
+`~/.claude/skills/` 가 없으면 먼저 생성한다.
+`doosan-robotics` 와 `ros2-architect` 는 두산 m0609 작업 컨텍스트가 없는 PC 에서는
+참고용이지만, 배치 자체는 항상 진행한다.
 
 ## 6. 보고
 
@@ -79,4 +88,5 @@ Claude Code CLI 안에서:
 - 배치한 CLAUDE.md 파일 경로
 - 등록한 마켓플레이스
 - 설치한 플러그인 목록 (성공/실패 분리)
+- 배치한 사용자 스킬 목록
 - 건너뛴 항목과 이유

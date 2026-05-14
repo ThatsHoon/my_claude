@@ -1,0 +1,119 @@
+{
+  "skill_name": "web-slide",
+  "description": "Trigger accuracy eval set — 10 should-trigger + 8 should-not-trigger queries. Use with skill-creator's run_loop.py for description optimization.",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "내가 만드는 cobot2 프로젝트 architecture 를 7 탭 짜리 16:9 HTML 슬라이드로 정리해 줘. 다크/라이트 토글도 있고.",
+      "should_trigger": true,
+      "category": "explicit_full_request"
+    },
+    {
+      "id": 2,
+      "prompt": "Build me a single-file HTML deck explaining the data pipeline. 3 tabs: overview, processing, results. 16:9 PPT-style.",
+      "should_trigger": true,
+      "category": "explicit_english"
+    },
+    {
+      "id": 3,
+      "prompt": "프로젝트 슬라이드 한 장만 그려 줘. YOLO11s 학습 결과를 metric pill 8개로 표시하고 per-class AP@50 bar chart 하나.",
+      "should_trigger": true,
+      "category": "single_slide_kr"
+    },
+    {
+      "id": 4,
+      "prompt": "switchView/applyTheme 패턴으로 ROS 2 노드 구조 explainer HTML 한 페이지 만들어 줘. viewBox 1320 742 로.",
+      "should_trigger": true,
+      "category": "technical_signature"
+    },
+    {
+      "id": 5,
+      "prompt": "architecture 한 장 그려 줘. 메인 PC 와 서브 PC, 사이의 토픽 흐름. /home/me/diagram.html 로 저장.",
+      "should_trigger": true,
+      "category": "implicit_html"
+    },
+    {
+      "id": 6,
+      "prompt": "training result 발표 자료 만들어야 해. mAP 99% / F1 96.8% 같은 KPI 카드 8개 + per-class bar chart. HTML 한 파일로.",
+      "should_trigger": true,
+      "category": "result_deck_kr"
+    },
+    {
+      "id": 7,
+      "prompt": "tab-based architecture explainer 가 필요해. 4 탭: system, db, pipeline, training. 각 탭이 16:9 슬라이드 1장씩.",
+      "should_trigger": true,
+      "category": "multi_tab_explainer"
+    },
+    {
+      "id": 8,
+      "prompt": "이 cobot2 systems-overview 슬라이드를 풀려고 하는데, viewBox 1320 742 strict 인 web slide 형태로 다듬어 줘.",
+      "should_trigger": true,
+      "category": "rework_existing"
+    },
+    {
+      "id": 9,
+      "prompt": "내 SaaS 제품의 핵심 기능 3가지를 한 슬라이드 단일 HTML 로 시각화 해서 클라이언트에게 보여주고 싶어. 깔끔하고 16:9.",
+      "should_trigger": true,
+      "category": "product_pitch_html"
+    },
+    {
+      "id": 10,
+      "prompt": "ML training history 를 v1 → v5 진화 타임라인으로 보여 주는 single-file HTML 슬라이드 만들어 줘. 각 버전별 변경/결과/교훈.",
+      "should_trigger": true,
+      "category": "timeline_history"
+    },
+
+    {
+      "id": 11,
+      "prompt": "Q3 영업 결과 데이터를 보여 주는 .pptx 파일 만들어 줘. 5 슬라이드. 회사 로고 우상단.",
+      "should_trigger": false,
+      "category": "negative_pptx",
+      "expected_route": "document-skills:pptx"
+    },
+    {
+      "id": 12,
+      "prompt": "marp 으로 발표 자료 만들어 줘. 마크다운 파일에서 슬라이드 생성하는 거.",
+      "should_trigger": false,
+      "category": "negative_marp"
+    },
+    {
+      "id": 13,
+      "prompt": "reveal.js 예제 좀 보여 줘. 화살표로 슬라이드 넘기는 거.",
+      "should_trigger": false,
+      "category": "negative_reveal_js"
+    },
+    {
+      "id": 14,
+      "prompt": "사용자가 slider 로 border-radius 와 shadow 조절하면 실시간으로 카드가 바뀌는 interactive playground 만들어 줘.",
+      "should_trigger": false,
+      "category": "negative_interactive_playground",
+      "expected_route": "playground:playground"
+    },
+    {
+      "id": 15,
+      "prompt": "랜딩 페이지 만들어 줘. 우리 제품 소개 + CTA 버튼. distinctive typography 로.",
+      "should_trigger": false,
+      "category": "negative_landing_page",
+      "expected_route": "frontend-design:frontend-design"
+    },
+    {
+      "id": 16,
+      "prompt": "이 PDF 에서 표만 추출해서 정리해 줘.",
+      "should_trigger": false,
+      "category": "negative_pdf"
+    },
+    {
+      "id": 17,
+      "prompt": "Gradio 데모 만들어 줘. 사용자가 이미지 업로드하면 객체 감지 결과 보여 주는 거.",
+      "should_trigger": false,
+      "category": "negative_gradio"
+    },
+    {
+      "id": 18,
+      "prompt": "포스터 한 장 디자인 해 줘. A3 사이즈. 학회 발표용.",
+      "should_trigger": false,
+      "category": "negative_poster",
+      "expected_route": "document-skills:canvas-design"
+    }
+  ]
+}

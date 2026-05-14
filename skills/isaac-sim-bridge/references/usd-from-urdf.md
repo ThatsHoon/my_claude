@@ -1,0 +1,326 @@
+# usd-from-urdf.md — URDF/MJCF/OnShape → USD 변환
+
+이 reference는 **로봇 모델을 Isaac Sim 에 올리는 모든 단계**를 다룬다. URDF Importer, MJCF Importer, articulation root 설정, joint drive 튜닝, collision mesh 분리, 그리고 매니퓰레이터별(UR / Franka / Doosan) 함정.
+
+## Contents
+1. URDF → USD 의 전체 흐름
+2. URDF Importer 사용법 (GUI + Python)
+3. Articulation root 결정과 검증
+4. Joint drive (P/D) 설정
+5. Collision mesh 분리 및 convex decomposition
+6. MJCF Importer 차이점
+7. OnShape Importer 차이점
+8. 매니퓰레이터별 노트 — UR
+9. 매니퓰레이터별 노트 — Franka
+10. 매니퓰레이터별 노트 — Doosan m0609
+11. 임포트 후 sanity check 스크립트
+12. 자주 발생하는 임포트 실패
+
+---
+
+## 1. URDF → USD 의 전체 흐름
+
+URDF 는 **`<link>` + `<joint>` + `<material>` + (선택) `<gazebo>`** 정의다. Isaac Sim 의 URDF Importer 는 이를 읽어 다음 USD prim 들을 생성한다:
+
+```
+<robot_root>/                    Xform (root)
+├── joints/                      Scope (joint definitions)
+│   ├── joint1                   PhysicsRevoluteJoint
+│   └── joint2                   PhysicsPrismaticJoint
+├── link0/                       Xform (base link)
+│   ├── visuals/...              Mesh / GeomSubset
+│   └── collisions/...           Mesh + PhysicsCollisionAPI
+├── link1/                       Xform with PhysicsArticulationRootAPI (자동/수동)
+│   └── ...
+└── ...
+```
+
+**핵심**: 임포트가 끝나면 URDF 는 **참조용일 뿐**, 모든 후속 작업은 USD 위에서 한다 (SKILL.md §Core mental model #2 참조).
+
+원본 가이드: `04-urdf-usd/importer_exporter/`
+
+## 2. URDF Importer 사용법
+
+### GUI
+
+`File → Import` → `.urdf` 선택 → Import 다이얼로그에서:
+
+- **Merge Fixed Joints**: 권장 ON. fixed joint 가 articulation count 를 깎는다.
+- **Convex Decomposition**: 복잡한 mesh 면 ON, 박스/실린더면 OFF (느려짐).
+- **Self Collision**: 기본 OFF, 충돌 디버깅 필요할 때만 ON.
+- **Default Drive Type**: `Position` 권장 (대부분의 실 로봇 컨트롤러가 위치 제어).
+- **Default Drive Strength**: 1e7 (위치제어 시 기본 stiffness). 너무 작으면 중력으로 처짐.
+- **Default Position Drive Damping**: 1e5.
+
+### Python (재현 가능)
+
+```python
+import omni.kit.commands
+from isaacsim.asset.importer.urdf import _urdf
+
+cfg = _urdf.ImportConfig()
+cfg.merge_fixed_joints = True
+cfg.convex_decomp = True
+cfg.fix_base = True            # 매니퓰레이터: True, 모바일 베이스: False
+cfg.make_default_prim = True
+cfg.self_collision = False
+cfg.create_physics_scene = True
+cfg.import_inertia_tensor = True   # URDF 의 <inertial> 사용
+cfg.default_drive_type = _urdf.UrdfJointTargetType.JOINT_DRIVE_POSITION
+cfg.default_drive_strength = 1e7
+cfg.default_position_drive_damping = 1e5
+cfg.distance_scale = 1.0       # URDF 가 m 단위면 1.0
+
+result, prim_path = omni.kit.commands.execute(
+    "URDFParseAndImportFile",
+    urdf_path="/home/me/robot.urdf",
+    import_config=cfg,
+    dest_path="/home/me/robot.usd",   # 저장 경로
+)
+print(f"Imported at {prim_path}")
+```
+
+`fix_base=True` 누락 → 매니퓰레이터가 중력으로 추락. `import_inertia_tensor=False` → 모든 link inertia 가 자동 계산되어 실 로봇과 다름.
+
+## 3. Articulation root 결정과 검증
+
+USD 의 articulation 은 **단 하나의 prim** 에만 `PhysicsArticulationRootAPI` 가 적용되어야 한다. 이 prim 의 자손에 있는 모든 PhysicsJoint 가 하나의 articulation tree 로 묶인다.
+
+URDF Importer 는 `fix_base=True` 면 base link 위에, `False` 면 root Xform 에 자동 부여한다.
+
+### 검증 (GUI)
+
+`/Robot/base_link` 같은 prim 클릭 → Property panel → `Add` → `Physics → Articulation Root` 가 이미 있어야 함. 없으면 임포터가 root 를 다른 곳에 붙였다는 의미 → 수동으로 추가하고 잘못된 위치는 제거.
+
+### 검증 (Python)
+
+```python
+from pxr import UsdPhysics
+from isaacsim.core.utils.stage import get_current_stage
+
+stage = get_current_stage()
+roots = []
+for prim in stage.Traverse():
+    if prim.HasAPI(UsdPhysics.ArticulationRootAPI):
+        roots.append(prim.GetPath())
+assert len(roots) == 1, f"Expected 1 articulation root, got {len(roots)}: {roots}"
+print(f"Articulation root: {roots[0]}")
+```
+
+**여러 개면 motion 이 비결정적** (마지막에 적용된 게 이긴다). 0개면 robot 이 아예 안 움직인다.
+
+### 모바일 매니퓰레이터 (mobile manipulator)
+
+베이스가 floating + 팔이 articulated 인 경우, articulation root 는 **베이스 위**에 둬야 팔/베이스가 한 트리. 베이스를 floating 으로 두려면:
+- `fix_base=False` 로 임포트
+- Root 는 base prim 에
+- Base 가 wheel 이면 wheel joint 도 articulation 안에
+
+## 4. Joint drive (P/D) 설정
+
+각 joint 에 `PhysicsDriveAPI` 가 붙어 있고, `drive:angular` (revolute) 또는 `drive:linear` (prismatic) 의 attribute 로:
+
+| Attribute | 의미 | 단위 |
+|---|---|---|
+| `targetPosition` | 목표 위치 | rad / m |
+| `targetVelocity` | 목표 속도 | rad/s / m/s |
+| `stiffness` | P gain | N·m/rad / N/m |
+| `damping` | D gain | N·m·s/rad / N·s/m |
+| `maxForce` | 토크 한계 | N·m / N |
+
+**적용 토크 모델** (PhysX 5):
+```
+τ = stiffness * (targetPosition - currentPosition)
+  + damping * (targetVelocity - currentVelocity)
+clamped to [-maxForce, +maxForce]
+```
+
+### 권장 초기값 (실 로봇 컨트롤러 모방)
+
+```python
+from pxr import UsdPhysics
+
+joint = stage.GetPrimAtPath("/Robot/joints/joint1")
+drive = UsdPhysics.DriveAPI.Get(joint, "angular")
+drive.GetStiffnessAttr().Set(4e6)    # 강한 위치제어
+drive.GetDampingAttr().Set(2e5)
+drive.GetMaxForceAttr().Set(87.0)    # joint 의 spec
+drive.GetTargetPositionAttr().Set(0.0)
+```
+
+너무 높으면 진동, 너무 낮으면 중력에 처짐. 실 로봇 datasheet 의 max torque 를 maxForce 로, stiffness/damping 은 PD 튜닝 (`physx-tuning.md` §"Drive 수식과 튜닝" 참조).
+
+### Drive 끄기 (토크 직접 제어)
+
+RL 에서 torque control 하려면:
+```python
+drive.GetStiffnessAttr().Set(0.0)
+drive.GetDampingAttr().Set(0.0)
+# 매 스텝마다 articulation_view.set_joint_efforts(...)
+```
+
+## 5. Collision mesh 분리 및 convex decomposition
+
+URDF 의 `<visual>` 과 `<collision>` 이 같은 mesh 를 쓰면, 임포터는 visual mesh 를 그대로 collision 에도 쓴다. **3D 스캔된 복잡한 visual mesh 가 collision 으로 쓰이면 PhysX 가 매 contact 마다 수만 개의 폴리곤 검사 → 시뮬레이션이 50ms+ 까지 늘어진다.**
+
+### 자동 convex decomposition
+
+임포트 다이얼로그에서 `Convex Decomposition: ON`. 내부적으로 V-HACD 사용, 메시당 5~30 hulls 로 쪼갠다.
+
+### 수동 (CoACD 권장, 더 좋은 품질)
+
+```bash
+# CoACD 설치
+pip install coacd
+
+# URDF 의 mesh 를 사전 분해
+python3 -c "
+import coacd, trimesh
+m = trimesh.load('/path/to/visual.obj')
+mesh = coacd.Mesh(m.vertices, m.faces)
+parts = coacd.run_coacd(mesh, threshold=0.05)
+# parts 를 별도 obj 파일로 저장 후 URDF <collision> 에 참조
+"
+```
+
+URDF:
+```xml
+<link name="finger">
+  <visual>
+    <geometry><mesh filename="finger_visual.obj"/></geometry>
+  </visual>
+  <collision>
+    <geometry><mesh filename="finger_collision_decomposed.obj"/></geometry>
+  </collision>
+</link>
+```
+
+### 박스 / 캡슐로 단순화
+
+손가락, 그리퍼 패드처럼 단순한 모양은 `<box>` / `<cylinder>` 로 손코딩이 최선. 폴리곤 0개 검사 → 가장 빠름.
+
+원본: `04-urdf-usd/openusd_tuning_tutorials/`
+
+## 6. MJCF Importer 차이점
+
+MuJoCo 의 `.xml` 을 import. Isaac Lab 의 일부 환경(humanoid 등)이 MJCF 기반.
+
+차이:
+- MJCF 는 contact / friction / actuator 가 **로봇 정의 안에** 들어 있음 → 임포트 시 그대로 옮겨짐 (URDF 는 별도 작업)
+- `<actuator>` 는 USD 의 `PhysicsDriveAPI` 로 변환
+- `<sensor>` 는 변환 안 됨 → Isaac Sim 측 OG 노드로 따로 셋업
+
+```python
+import omni.kit.commands
+omni.kit.commands.execute(
+    "MJCFCreateAsset",
+    mjcf_path="/path/to/humanoid.xml",
+    import_config=...,  # MJCFImportConfig
+    dest_path="/path/to/humanoid.usd",
+)
+```
+
+## 7. OnShape Importer 차이점
+
+OnShape (CAD) 에서 직접 import. URDF 단계 없이 곧장 USD. 산업용 매니퓰레이터 CAD 가 OnShape 에 있을 때만 가치 있음.
+
+`Window → Extensions → onshape.importer` enable. API key 필요.
+
+## 8. 매니퓰레이터별 노트 — Universal Robots (UR5, UR10, UR16e)
+
+**소스**: `10-gap-fills/manipulators/ur/Universal_Robots_ROS2_Description/`
+
+함정:
+- UR 의 공식 URDF 는 `xacro` 매크로 → 먼저 펼쳐야 함:
+  ```bash
+  ros2 run xacro xacro \
+    Universal_Robots_ROS2_Description/urdf/ur.urdf.xacro \
+    name:=ur5 ur_type:=ur5 > ur5_expanded.urdf
+  ```
+- joint limit 이 `<safety_controller>` 태그로 들어 있어 임포터가 무시 → URDF 의 `<limit>` 만 사용. 안전 마진 별도 적용.
+- visual mesh 가 `dae` (Collada) → Isaac Sim 6.0 부터 자동 변환되지만 5.x 면 obj 로 사전 변환 필요.
+- TCP frame 이 URDF 에 없음 → 임포트 후 USD 에서 `tool0` 자식으로 빈 Xform 추가.
+
+권장 drive:
+- `stiffness=1e7`, `damping=1e5`, `maxForce=150` (어깨), `87` (팔꿈치), `40` (손목).
+
+## 9. 매니퓰레이터별 노트 — Franka Panda / FR3
+
+**소스**: `10-gap-fills/manipulators/franka/franka_ros2/`, `09-github-repos/IsaacLab/source/isaaclab_assets/isaaclab_assets/` (Franka config)
+
+가장 잘 지원되는 로봇. Isaac Lab 기본 매니퓰레이터.
+
+함정:
+- Panda 와 FR3 는 인터페이스 같지만 spec 다름 (FR3 는 페이로드/속도 ↑) → URDF 분리 필수.
+- 그리퍼는 별도 articulation 으로 관리해도 됨 (open/close 만 쓰면).
+- `franka_description` 의 visual mesh 는 사이즈 큼 → 게임용 LOD 가 아니므로 RTX-Real-Time 에서 무겁다.
+
+권장 drive:
+- 7 joints: `stiffness=400, damping=80` (URDF 기본을 그대로 사용해도 됨, Isaac Lab 의 `FRANKA_PANDA_CFG` 참조).
+
+## 10. 매니퓰레이터별 노트 — Doosan m0609
+
+**소스**: `10-gap-fills/manipulators/doosan/doosan-robot2/dsr_description2/`
+
+NVIDIA 공식 USD 라이브러리에 m0609 가 **없다**. 직접 import 해야 함.
+
+```bash
+# 1. xacro 펼침
+cd ~/cobot_ws/src/doosan-robot2/dsr_description2/xacro
+ros2 run xacro xacro m0609.urdf.xacro > /tmp/m0609.urdf
+
+# 2. mesh 경로를 절대경로로 변환 (URDF Importer 가 package:// 못 풀음)
+sed -i 's|package://dsr_description2|/home/hoon/cobot_ws/install/dsr_description2/share/dsr_description2|g' /tmp/m0609.urdf
+
+# 3. Isaac Sim 에서 import (GUI or Python — §2 참조)
+```
+
+함정:
+- `dsr_description2` 의 mesh 는 `.dae` + 텍스처. 임포트 후 텍스처 경로가 깨지면 USD 에서 `material:binding` 직접 수정.
+- m0609 의 joint 1, 2, 3 은 가장 강하고 (`maxForce=200+`), 4, 5, 6 은 약함 (`maxForce=50` 정도). 같은 stiffness 쓰면 손목이 진동.
+- TCP / tool flange frame: URDF 에 `tool0` 으로 정의되어 있음. m0609 는 사용자가 add_tcp 로 정의한 TCP 가 따로 있는데 (vendor SDK), USD 에는 자동 반영 안 됨 → 시뮬에서도 같은 변환을 수동 적용해야 sim/real 일치.
+- **두산의 dsr_controller2 와 함께 쓰려면** vendor 측 mode 가 `virtual` (시뮬레이션 모드) 여야 한다. 자세한 건 `doosan-robotics` 스킬의 `references/launch-and-modes.md` 참조.
+
+호출 사이드의 ROS 토픽/서비스 이름은 두산 스킬과 동일해야 함 (`/dsr01/joint_states` 등). USD 임포트 시 link 이름이 두산 표준과 일치하는지 확인 (`base_0`, `link1`, ..., `link6`, `tool0`).
+
+## 11. 임포트 후 sanity check 스크립트
+
+`scripts/urdf_to_usd_check.py` 가 이 스킬에 포함되어 있다. 사용:
+
+```bash
+~/.local/share/ov/pkg/isaac-sim-6.0.0/python.sh \
+  ~/.claude/skills/isaac-sim-bridge/scripts/urdf_to_usd_check.py \
+  /path/to/robot.usd
+```
+
+검사 항목:
+1. articulation root prim 정확히 1개
+2. 모든 PhysicsJoint 가 articulation 안에 있음
+3. 모든 link 의 mass > 0
+4. visual / collision mesh 폴리곤 비율 (collision 이 visual 의 1/10 이하 권장)
+5. drive stiffness/damping 이 0 이 아닌 joint 개수
+
+실패 항목이 있으면 구체적 prim path 를 출력.
+
+## 12. 자주 발생하는 임포트 실패
+
+| 증상 | 원인 | 해결 |
+|---|---|---|
+| 임포트 후 robot 이 무한 추락 | `fix_base=False` + 매니퓰레이터 | `fix_base=True` 재임포트 |
+| 임포트는 됐는데 안 움직임 | articulation root 0개 또는 위치 잘못 | §3 검증 |
+| Drive 가 안 먹음 | DriveAPI 가 angular/linear 잘못 | revolute → "angular", prismatic → "linear" |
+| 일부 joint 만 응답 | 그 joint 가 articulation tree 밖 | 모두 같은 root 자손인지 확인 |
+| collision 이 visual 보다 큼 | convex hull 이 mesh 를 둘러싸도록 | 수동 `<collision>` 정의 |
+| import 시 segfault | URDF 의 mesh 경로 못 찾음 | 절대경로로 변환 (§10 의 sed) |
+| joint limit 이 무시됨 | URDF `<limit>` 누락 | URDF 에 `<limit lower="..." upper="..." effort="..." velocity="..."/>` 명시 |
+| material 색이 회색 | `.dae` 텍스처 경로 깨짐 | USD 에서 `material:binding` 수정 또는 mesh 를 `.usd` 로 사전 변환 |
+| 임포트 후 GUI 가 멈춤 | mesh 폴리곤 수 100만+ | Decimate (Blender) 후 재임포트 |
+| 두 번째 임포트 시 prim 충돌 | 같은 prim path 에 덮어쓰기 | dest_path 를 다르게 또는 기존 stage 비우기 |
+
+## See also
+
+- `physx-tuning.md` §"Drive 수식과 튜닝" — drive gain 의 수학과 안정성
+- `omnigraph-ros-bridge.md` §"JointState 퍼블리시" — 임포트한 robot 을 ROS 로 노출
+- `isaaclab-rl.md` §"Asset 등록" — USD 를 Isaac Lab env 에 연결
+- `doosan-robotics` 스킬: `references/launch-and-modes.md` — m0609 mode 와 TCP 정의
+- 원문: `04-urdf-usd/robot_setup/`, `04-urdf-usd/importer_exporter/`
