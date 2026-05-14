@@ -318,11 +318,111 @@ ros2 topic pub /cmd_vel geometry_msgs/Twist "linear: {x: 0.2}" -1
 | 노드 색이 노랑 (deprecated) | 6.0 에서 모듈 경로 변경 | `omni.isaac.ros2_bridge.*` → `isaacsim.ros2.bridge.*` |
 | Python 에서 만든 그래프가 빈 화면 | Stage 가 아직 안 열림 | `omni.usd.get_context().new_stage_async()` 후 edit |
 
+## 다중 로봇 OG 팩토리 (warehouse 시나리오)
+
+N 대 m0609+RG2 를 동일 OG 템플릿으로 인스턴스화. GUI 클릭 N번 하지 말고 Python 으로.
+
+### 팩토리 패턴
+
+```python
+import omni.graph.core as og
+
+def build_robot_bridge(robot_id: str):
+    """단일 로봇용 OG 그래프 (joint pub/sub, camera, contact). namespace 만 robot_id 로 치환."""
+    ns = f"/{robot_id}"
+    prim_root = f"/World/Robots/{robot_id}/m0609"
+    keys = og.Controller.Keys
+    og.Controller.edit(
+        {"graph_path": f"/World/Graphs/{robot_id}_bridge",
+         "evaluator_name": "execution"},
+        {
+            keys.CREATE_NODES: [
+                ("Tick",          "omni.graph.action.OnPlaybackTick"),
+                ("Ctx",           "omni.isaac.ros2_bridge.ROS2Context"),
+                # JointState 양방향
+                ("ArticState",    "omni.isaac.core_nodes.IsaacArticulationState"),
+                ("PubJoint",      "omni.isaac.ros2_bridge.ROS2PublishJointState"),
+                ("SubJointCmd",   "omni.isaac.ros2_bridge.ROS2SubscribeJointState"),
+                ("Applier",       "omni.isaac.core_nodes.IsaacArticulationController"),
+                # TF
+                ("PubTF",         "omni.isaac.ros2_bridge.ROS2PublishTransformTree"),
+                # 카메라 (overhead)
+                ("CamHelper",     "omni.isaac.ros2_bridge.ROS2CameraHelper"),
+            ],
+            keys.SET_VALUES: [
+                ("ArticState.inputs:targetPrim",       prim_root),
+                ("Applier.inputs:targetPrim",          prim_root),
+                ("PubJoint.inputs:topicName",          f"{ns}/joint_states"),
+                ("SubJointCmd.inputs:topicName",       f"{ns}/joint_command"),
+                ("PubTF.inputs:parentPrim",            "/World"),
+                ("PubTF.inputs:targetPrims",           [prim_root]),
+                ("CamHelper.inputs:cameraPrim",        f"/World/Cameras/{robot_id}_overhead"),
+                ("CamHelper.inputs:type",              "rgb"),
+                ("CamHelper.inputs:topicName",         f"{ns}/cam/conveyor/image_raw"),
+                ("CamHelper.inputs:frameId",           f"{robot_id}_cam"),
+            ],
+            keys.CONNECT: [
+                ("Tick.outputs:tick", "ArticState.inputs:execIn"),
+                ("Tick.outputs:tick", "PubJoint.inputs:execIn"),
+                ("Tick.outputs:tick", "SubJointCmd.inputs:execIn"),
+                ("Tick.outputs:tick", "PubTF.inputs:execIn"),
+                ("Tick.outputs:tick", "CamHelper.inputs:execIn"),
+                ("ArticState.outputs:jointNames",     "PubJoint.inputs:jointNames"),
+                ("ArticState.outputs:jointPositions", "PubJoint.inputs:positionArray"),
+                ("ArticState.outputs:jointVelocities","PubJoint.inputs:velocityArray"),
+                ("SubJointCmd.outputs:positionArray", "Applier.inputs:positionCommand"),
+                ("Ctx.outputs:context",               "PubJoint.inputs:context"),
+                ("Ctx.outputs:context",               "SubJointCmd.inputs:context"),
+                ("Ctx.outputs:context",               "PubTF.inputs:context"),
+                ("Ctx.outputs:context",               "CamHelper.inputs:context"),
+            ],
+        },
+    )
+
+for rid in ("r0", "r1", "r2", "r3"):
+    build_robot_bridge(rid)
+```
+
+### 토픽 충돌 방지 체크리스트
+
+- 모든 topicName 이 `/{robot_id}/...` prefix 로 출발 → ros2 topic list 에서 중복 0
+- TF 의 frame_id 는 robot prim path 그대로 — TF tree 가 namespace 없이 단일 트리. **참고: TF 는 ROS 2 namespace 의 영향을 받지 않음.** 다중 로봇 시 link 이름이 같으면 충돌하므로 **로봇 URDF 의 link 이름에 prefix** 추가 (`r0_link1`) 필요. doosan-robotics `references/multi-robot-and-quirks.md` 의 패턴 동일.
+- Joint name 도 prefix (`r0_joint1` 등) — controller 의 joint name list 와 일치시킴
+
+### QoS 통일
+
+OG 노드의 QoS dropdown 은 다음 매트릭스로:
+
+| 토픽 | QoS |
+|---|---|
+| `joint_states`, `joint_command` | `SystemDefaultsQoS` (RELIABLE, KEEP_LAST(10)) |
+| `image_raw`, `depth`, `camera_info` | `SensorDataQoS` (BEST_EFFORT, KEEP_LAST(5)) |
+| `tf`, `tf_static` | `tf_static` 는 TRANSIENT_LOCAL durability 필수 |
+| `contact_events`, `diagnostics` | `SystemDefaultsQoS` |
+
+ros2-architect `references/communication.md §QoS` 와 정확히 일치.
+
+### 검증
+
+bringup 후 `scripts/check_namespace_isolation.py` 가 ROS 2 topic 목록을 받아 다음을 확인:
+- `/{robot_id}/...` prefix 가 N 세트로 분리되어 있음
+- 동일 토픽 이름 중복 없음
+- robot 마다 joint_states publisher 가 1개
+
+### 안티패턴
+
+- ❌ topicName 을 robot_id 없이 절대 토픽으로 (`/joint_states`) — 4대 모두 동일 토픽에 publish, 데이터 뒤섞임
+- ❌ targetPrim 을 단순 link 가 아닌 stage root 로 — articulation 인식 실패
+- ❌ 같은 OG 그래프 안에서 4 로봇 모두 처리 — 디버깅 지옥, 그래프 한 곳 망가지면 전부 멈춤
+- ❌ TF 의 link prefix 미부착 — TF tree 충돌
+
 ## See also
 
 - `installation.md` §7 — ROS 2 distro 매트릭스
 - `usd-from-urdf.md` §3 — articulation root (JointState publisher 가 가리킬 곳)
+- `usd-from-urdf.md §13` — m0609+RG2 결합 USD (이 OG 가 가리킬 robot template)
 - `physx-tuning.md` §"Control rate" — 시뮬 rate 와 ROS 토픽 rate
 - `isaac-ros-accel.md` §"NITROS zero-copy" — GPU 메시지로 OG → Isaac ROS 노드 직접 전달
+- `warehouse-sorting-pipeline.md §4` — 본 팩토리의 전체 셋업 맥락
 - `ros2-architect` 스킬: `references/communication.md` (QoS), `references/tf2-urdf.md` (TF), `references/debugging.md` (ros2 doctor)
 - 원문: `02-ros2-bridge/ros2_tutorials/`, `03-omnigraph/omnigraph/`

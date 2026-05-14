@@ -317,10 +317,121 @@ sed -i 's|package://dsr_description2|/home/hoon/cobot_ws/install/dsr_description
 | 임포트 후 GUI 가 멈춤 | mesh 폴리곤 수 100만+ | Decimate (Blender) 후 재임포트 |
 | 두 번째 임포트 시 prim 충돌 | 같은 prim path 에 덮어쓰기 | dest_path 를 다르게 또는 기존 stage 비우기 |
 
+## 13. m0609 + RG2 결합 USD 만들기 (warehouse 시나리오)
+
+warehouse 컨베이어 분류 시나리오 (`warehouse-sorting-pipeline.md`) 는 m0609 팔과 OnRobot RG2 그리퍼를 합친 단일 USD asset 을 N대 인스턴스화. 결합 절차:
+
+### 13.1 원본 URDF 확보
+
+- m0609 URDF: 자료실 `/home/hoon/isaac-sim-skill-research/10-gap-fills/manipulators/doosan/doosan-robot2/dsr_description2/urdf/m0609.urdf.xacro` 또는 `~/cobot_ws/src/doosan-robot2/...` 의 동일 파일
+- RG2 URDF: `/home/hoon/isaac-sim-skill-research/11-warehouse-sorting/rg2-gripper/onrobot_community/` 또는 `ros2_robotiq_gripper/` 의 mimic-joint URDF
+
+### 13.2 결합 (xacro 또는 URDF concat)
+
+가장 단순한 방법은 m0609 의 마지막 link (`link6` 또는 `tcp`) 에 `fixed joint` 로 RG2 base 를 붙이는 wrapper xacro:
+
+```xml
+<?xml version="1.0"?>
+<robot name="m0609_rg2" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:include filename="$(find dsr_description2)/urdf/m0609.urdf.xacro"/>
+  <xacro:include filename="$(find rg2_description)/urdf/rg2.urdf.xacro"/>
+
+  <xacro:m0609 prefix=""/>
+  <xacro:rg2 prefix="rg2_"/>
+
+  <joint name="m0609_to_rg2" type="fixed">
+    <parent link="link6"/>
+    <child  link="rg2_base"/>
+    <origin xyz="0 0 0.030" rpy="0 0 0"/>   <!-- 30mm flange offset, 모델에 맞춰 조정 -->
+  </joint>
+</robot>
+```
+
+xacro → URDF:
+
+```bash
+ros2 run xacro xacro m0609_rg2.urdf.xacro -o m0609_rg2.urdf
+```
+
+### 13.3 URDF Importer 로 변환
+
+§2 의 Python 패턴 그대로. 핵심 옵션:
+
+```python
+from omni.importer.urdf import _urdf
+
+cfg = _urdf.ImportConfig()
+cfg.merge_fixed_joints = False             # rg2 mimic joint 보존
+cfg.import_inertia_tensor = True
+cfg.fix_base = False                       # 베이스는 world 와 fixed joint 로 별도 묶음
+cfg.self_collision = False                 # RG2 mimic joint 가 self_collision 으로 false alarm 다발
+cfg.distance_scale = 1.0                   # URDF 가 meter 단위라 가정
+cfg.density = 0.0                          # URDF inertia 사용
+_, stage_path = _urdf.create_from_urdf(
+    "m0609_rg2.urdf", dest_path="/World/Robots/template/m0609_rg2", config=cfg)
+```
+
+`merge_fixed_joints=False` 가 중요 — True 면 RG2 의 `rg2_base→rg2_finger_link1` 등 fixed/mimic 구조가 손실됨.
+
+### 13.4 Mimic joint 처리
+
+RG2 의 두 finger 는 한 actuator 로 mirroring. URDF `<mimic joint="rg2_finger_joint1" multiplier="1.0" offset="0.0"/>` 가 있어도 Isaac Sim 의 URDF importer 는 mimic 을 직접 따르지 않는다. 후처리:
+
+```python
+from pxr import UsdPhysics
+finger2 = stage.GetPrimAtPath("/World/Robots/template/m0609_rg2/joints/rg2_finger_joint2")
+# Drive 를 끄고, 별도 OG 노드 또는 Python script 가 finger1 의 position 을 읽어 finger2 에 mirror 적용
+UsdPhysics.DriveAPI.Get(finger2, "linear").GetTargetPositionAttr().Set(0.0)
+# 또는 PhysxArticulationAPI 의 mimic constraint (Isaac Sim 6.x 가 일부 지원)
+```
+
+대안: gripper command 가 들어오면 OG 의 JointCommand 가 두 finger 모두 같은 target 으로 publish — 가장 단순.
+
+### 13.5 Articulation root 검증
+
+§3 의 검증을 그대로 적용:
+- articulation root 는 m0609 base (`base_0` 또는 `link0`) 에만 1개
+- RG2 base 는 child link 로만 존재, 별도 articulation 아님
+- `scripts/urdf_to_usd_check.py` 가 자동으로 검사
+
+### 13.6 TCP 정의
+
+m0609 의 마지막 link 가 아닌 RG2 의 두 finger 중간점을 TCP 로 정의해야 정확한 grasp pose 계산 가능:
+
+```python
+from pxr import UsdGeom, Gf
+tcp_path = "/World/Robots/template/m0609_rg2/rg2_tcp"
+xform = UsdGeom.Xform.Define(stage, tcp_path)
+# rg2_base 기준 z=+0.14, y=0, x=0 (모델에 맞춰)
+xform.AddTranslateOp().Set(Gf.Vec3d(0, 0, 0.14))
+# 부모를 rg2_base 로
+```
+
+`sort-decision-logic.md §3` 의 grasp pose 계산이 이 TCP 를 활용.
+
+### 13.7 저장 (재사용용)
+
+```python
+stage.Export("robots/m0609_rg2.usda", args={"format": "usda"})
+```
+
+`.usda` (text) 로 저장 — `warehouse-sorting-pipeline.md §2` 가 reference 로 가져갈 1차 자산.
+
+### 13.8 자주 발생하는 함정
+
+| 증상 | 원인 | 처방 |
+|---|---|---|
+| Gripper 가 안 닫힘 | mimic joint 미설정 + 단일 finger 만 command | OG 가 두 finger 동시에 publish 또는 §13.4 의 constraint |
+| Gripper 가 닫혀도 객체 안 잡힘 | finger 의 surface 마찰 너무 낮음 | `PhysxMaterial:dynamicFriction`/`staticFriction` 0.9+ |
+| 팔이 진동 | RG2 의 finger collision 이 self-collision 으로 잡힘 | `self_collision=False` 또는 finger pair 만 disable |
+| TCP 가 wrong 위치 | flange offset (`m0609_to_rg2` joint origin) 부정확 | RG2 datasheet 의 base→TCP 길이로 보정 |
+
 ## See also
 
 - `physx-tuning.md` §"Drive 수식과 튜닝" — drive gain 의 수학과 안정성
 - `omnigraph-ros-bridge.md` §"JointState 퍼블리시" — 임포트한 robot 을 ROS 로 노출
 - `isaaclab-rl.md` §"Asset 등록" — USD 를 Isaac Lab env 에 연결
+- `warehouse-sorting-pipeline.md §2` — 결합한 USD 를 N대로 인스턴스화
+- `sort-decision-logic.md §3` — TCP 기준 grasp pose
 - `doosan-robotics` 스킬: `references/launch-and-modes.md` — m0609 mode 와 TCP 정의
-- 원문: `04-urdf-usd/robot_setup/`, `04-urdf-usd/importer_exporter/`
+- 원문: `04-urdf-usd/robot_setup/`, `04-urdf-usd/importer_exporter/`, `10-gap-fills/manipulators/doosan/`, `11-warehouse-sorting/rg2-gripper/`

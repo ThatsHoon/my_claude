@@ -1,0 +1,23 @@
+-- Placeholder for supplemental indexes added during operation.
+--
+-- The base schema in 0001_telemetry_schema.sql ships with the indexes that
+-- the warehouse-sorting reference workload exercises (per-robot timelines,
+-- decision joins, cycle outcome lookups, recent failures). As real query
+-- patterns emerge — e.g. a dashboard that frequently filters detections by
+-- class_name + ts, or analytics jobs that scan joint_snapshots by cycle_id
+-- only — append the corresponding CREATE INDEX statements here so the
+-- production schema and the migration history stay in sync.
+--
+-- Operational guidance:
+--   1. Reproduce the slow query on a recent snapshot, capture EXPLAIN ANALYZE
+--      before deciding the shape of the new index.
+--   2. Prefer CREATE INDEX CONCURRENTLY for live tables (Supabase supports it
+--      via direct psql; the dashboard SQL editor wraps statements in a tx, so
+--      use the SQL editor's "raw" mode or psql).
+--   3. Document the query the index serves with a -- comment line above it.
+--
+-- Example skeleton (commented out):
+--
+-- CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_detections_class_name_ts
+--     ON detections (class_name, ts DESC);
+--   -- supports dashboard query: detections by human-readable class + recency

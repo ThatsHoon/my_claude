@@ -17,18 +17,33 @@ description: >
   controllers like dsr_controller2, ros2_control, franka_ros2). Also trigger when the
   user describes any workflow that combines a simulator + real robot for the same arm
   (UR, Franka, Doosan m0609, etc.) regardless of whether they name "Isaac" explicitly.
+  Also trigger on warehouse / conveyor sorting scenarios with multiple m0609+RG2 (or
+  any) robot arms in Isaac Sim, when the user wants to (a) wire YOLO (in-process
+  ultralytics or isaac_ros_yolov8) to a simulated overhead camera and feed detections
+  into a hand-coded class→bin sort decision FSM driving cuMotion or MoveIt2 plans, (b)
+  expose the simulated robots and conveyor to an external dashboard / operator console
+  via a FastAPI + rosbridge_suite REST/WebSocket bridge over ROS 2, or (c) persist every
+  detection, decision, cycle, joint snapshot, collision and GPU metric to a Supabase
+  Postgres telemetry schema for after-the-fact debugging and performance auditing.
   Trigger on terms:
   isaac sim, isaacsim, isaac lab, isaaclab, isaac ros, omniverse, omnigraph, action
   graph, usd, openusd, urdf importer, mjcf importer, replicator, sdg, sim2real,
   sim-to-real, domain randomization, physx, articulation, joint drive, cumotion, curobo,
-  nitros, isaac manipulator, kit app, kit extension. Also Korean: 아이작 심, 아이작 랩,
-  옴니버스, 옴니그래프, 도메인 랜덤화, 합성 데이터, 정책 학습, GPU 모션 플래너, Jetson
-  배포. Trigger even when the user does not say "Isaac" if the scenario fits — e.g. a
-  USD/PhysX simulator with thousands of GPU-parallel envs, or a policy that succeeds in
-  sim but fails on the real arm. Covers Isaac Sim 5.x/6.x, Isaac Lab main, Isaac ROS DP
-  and GA. Defer ROS 2 middleware (QoS, executors, rclpy, lifecycle, launch) to
-  `ros2-architect`, and Doosan m0609 vendor APIs (DRL, DRFL, dsr_controller2,
-  servoj_rt_stream) to `doosan-robotics`.
+  nitros, isaac manipulator, kit app, kit extension, warehouse sorting, conveyor sorting,
+  pick and place sim, multi-robot isaac sim, yolo isaac sim, isaac_ros_yolov8,
+  ultralytics in sim, supabase telemetry, ros2 web bridge, fastapi rosbridge, rosbridge
+  suite, RG2 gripper, m0609 simulation. Also Korean: 아이작 심, 아이작 랩, 옴니버스,
+  옴니그래프, 도메인 랜덤화, 합성 데이터, 정책 학습, GPU 모션 플래너, Jetson 배포,
+  웨어하우스 분류, 컨베이어 분류, 다중 로봇팔 시뮬, 시뮬 텔레메트리, 로봇 상태 조회. Trigger
+  even when the user does not say "Isaac" if the scenario fits — e.g. a USD/PhysX
+  simulator with thousands of GPU-parallel envs, a policy that succeeds in sim but fails
+  on the real arm, or a multi-robot warehouse + YOLO + Postgres telemetry pipeline.
+  Covers Isaac Sim 5.x/6.x, Isaac Lab main, Isaac ROS DP and GA. Defer ROS 2 middleware
+  (QoS, executors, rclpy, lifecycle, launch) to `ros2-architect`, Doosan m0609 vendor
+  APIs (DRL, DRFL, dsr_controller2, servoj_rt_stream) to `doosan-robotics`, and Supabase
+  operational concerns (RLS policy authoring, Auth, Realtime activation, CLI workflows)
+  to the `supabase` skill — this skill defines *what telemetry goes where*, not how to
+  run Postgres.
 license: Apache-2.0
 allowed-tools: [Read, Write, Edit, Glob, Grep, Bash, WebFetch]
 ---
@@ -189,6 +204,11 @@ tasks involve two or three references in combination.
 | Generating synthetic datasets (COCO/KITTI), Annotators/Writers/Distributions, Replicator-Agent (humans, behaviors), online randomization for RL | `replicator-sdg.md` | `isaaclab-rl.md` for RL integration |
 | Tuning PhysX 5 (TGS vs PGS solver, substeps, iteration counts), articulation drive (P/D), contact/friction, fixing sim-to-real physical gap | `physx-tuning.md` | `usd-from-urdf.md` for where parameters live in USD, `isaaclab-rl.md` for batch impact |
 | Using Isaac ROS GPU-accelerated nodes (NITROS zero-copy), cuMotion vs MoveIt2, cuRobo direct API, Visual SLAM, Isaac Manipulator, Jetson tuning | `isaac-ros-accel.md` | `omnigraph-ros-bridge.md` for the bridge side |
+| Warehouse + 컨베이어 + 다중 m0609+RG2 시나리오 셋업 (USD 컴포지션, namespacing, OG factory, conveyor 모델링) | `warehouse-sorting-pipeline.md` | `usd-from-urdf.md §13` (m0609+RG2 결합 USD), `omnigraph-ros-bridge.md §다중 로봇 OG 팩토리` |
+| Isaac Sim 카메라로 YOLO 추론 (in-process ultralytics vs isaac_ros_yolov8 분리), 학습 데이터 생성 | `yolo-perception.md` | `replicator-sdg.md §컨베이어+YOLO 학습 데이터`, `isaac-ros-accel.md §isaac_ros_yolov8 사용 결정` |
+| Detection → class→bin 매핑 → cuMotion/MoveIt2 plan → FollowJointTrajectory 실행 FSM | `sort-decision-logic.md` | `physx-tuning.md §Drive` (RG2 mimic), `isaac-ros-accel.md §cuMotion vs MoveIt2` |
+| ROS 2 ↔ REST/WebSocket 브리지 (FastAPI + rosbridge_suite, 외부 dashboard/operator 콘솔) | `server-bridge.md` | ros2-architect `references/communication.md`, `telemetry-supabase.md §쿼리 예시` |
+| 모든 detection/decision/cycle/joint/collision/GPU 이벤트 → Supabase Postgres 적재 | `telemetry-supabase.md` | `db/migrations/0001_telemetry_schema.sql`, `supabase` 스킬 (운영) |
 
 If the task touches **Kit extension authoring**, **OpenUSD low-level APIs**, **Omniverse
 Connect SDK**, or **Nucleus content management**, those are not yet first-class in this
@@ -226,10 +246,18 @@ skill — consult `https://docs.omniverse.nvidia.com/kit/` directly or the
   simulator-side OG nodes that publish *into* ROS; everything ROS-internal lives in
   the architect skill.
 - **Doosan m0609 vendor SDK** — `DSR_ROBOT2`, `dsr_controller2`, mode transitions,
-  DRL scripts, the 161 Doosan services/topics: defer to `doosan-robotics`. Use the USD
-  model for the m0609 (Phase A5 of `usd-from-urdf.md`), but for behavior code, the
-  vendor skill is authoritative. Cross-reference the Doosan dev-docs at
-  `/home/hoon/Documents/services/` and `/home/hoon/Documents/topics/`.
+  DRL scripts, the 161 Doosan services/topics, multi-robot DDS isolation patterns:
+  defer to `doosan-robotics`. Use the USD model for the m0609 (`usd-from-urdf.md §13`
+  for the m0609+RG2 결합 패턴), but for behavior code, the vendor skill is authoritative.
+  Cross-reference the Doosan dev-docs at `/home/hoon/Documents/services/` and
+  `/home/hoon/Documents/topics/` and `~/.claude/plugins/doosan-robotics/skills/doosan-robotics/references/multi-robot-and-quirks.md`.
+- **Supabase operational concerns** — RLS policy authoring, Auth integration, Realtime
+  publication activation, CLI workflows (`supabase db push`, `supabase migration new`),
+  performance tuning of Postgres queries: defer to the `supabase` skill (and
+  `supabase:supabase-postgres-best-practices` for query/index optimization). This skill
+  defines *what telemetry tables exist and what gets written into them* in
+  `db/migrations/0001_telemetry_schema.sql`; everything about running and securing the
+  Postgres backend lives in the supabase skill.
 - **Project-local conventions** — anything in a workspace `CLAUDE.md` overrides this
   skill. The user is in control.
 
@@ -263,25 +291,44 @@ When this skill is active, code written should:
 
 ```
 isaac-sim-bridge/
-├── SKILL.md                          ← you are here (router + core mental model)
+├── SKILL.md                              ← you are here (router + core mental model)
 ├── references/
-│   ├── installation.md               ← Workstation/Container/Cloud/Jetson setup,
-│   │                                   ROS 2 distro matrix, IsaacAutomator
-│   ├── omnigraph-ros-bridge.md       ← OG node model, Action Graph for ROS,
-│   │                                   sensor publishing, QoS, debugging
-│   ├── usd-from-urdf.md              ← URDF/MJCF Importer, articulation, joint drive,
-│   │                                   collision meshes, per-vendor (UR/Franka/Doosan)
-│   ├── isaaclab-rl.md                ← Manager vs Direct env, domain randomization,
-│   │                                   PPO/SAC, policy export, sim-to-real
-│   ├── replicator-sdg.md             ← Annotators/Writers/Distributions,
-│   │                                   COCO/KITTI, Replicator-Agent, online DR
-│   ├── physx-tuning.md               ← TGS vs PGS, substeps, iterations,
-│   │                                   articulation drive math, sim-to-real gap
-│   └── isaac-ros-accel.md            ← NITROS, cuMotion vs MoveIt2, cuRobo,
-│                                       Visual SLAM, Isaac Manipulator, Jetson
-└── scripts/
-    └── urdf_to_usd_check.py          ← post-import sanity check: articulation root,
-                                        joint drive enabled, mass nonzero, mesh ratio
+│   ├── installation.md                   ← Workstation/Container/Cloud/Jetson setup,
+│   │                                       ROS 2 distro matrix, IsaacAutomator
+│   ├── omnigraph-ros-bridge.md           ← OG node model, Action Graph for ROS,
+│   │                                       sensor publishing, QoS, debugging,
+│   │                                       §"다중 로봇 OG 팩토리"
+│   ├── usd-from-urdf.md                  ← URDF/MJCF Importer, articulation, joint drive,
+│   │                                       collision meshes, per-vendor, §13 m0609+RG2
+│   ├── isaaclab-rl.md                    ← Manager vs Direct env, domain randomization,
+│   │                                       PPO/SAC, policy export, sim-to-real
+│   ├── replicator-sdg.md                 ← Annotators/Writers/Distributions,
+│   │                                       COCO/KITTI, Replicator-Agent, online DR,
+│   │                                       §"컨베이어+YOLO 학습 데이터"
+│   ├── physx-tuning.md                   ← TGS vs PGS, substeps, iterations,
+│   │                                       articulation drive math, sim-to-real gap
+│   ├── isaac-ros-accel.md                ← NITROS, cuMotion vs MoveIt2, cuRobo,
+│   │                                       Visual SLAM, Isaac Manipulator, Jetson,
+│   │                                       §"isaac_ros_yolov8 사용 결정"
+│   ├── warehouse-sorting-pipeline.md     ← (warehouse) USD 컴포지션, 다중 로봇
+│   │                                       namespacing, 컨베이어 모델링, GPU 예산
+│   ├── yolo-perception.md                ← (warehouse) In-process YOLO 추론,
+│   │                                       Detection2DArray publish, bbox→3D pose
+│   ├── sort-decision-logic.md            ← (warehouse) class→bin FSM, cuMotion 호출,
+│   │                                       multi-robot zone allocator, abort/preempt
+│   ├── server-bridge.md                  ← (warehouse) FastAPI+rosbridge REST/WS,
+│   │                                       E1~E9 매핑, 인증, Prometheus
+│   └── telemetry-supabase.md             ← (warehouse) ROS 2 → Postgres logger,
+│                                           9-table 스키마, 운영 쿼리, RLS
+├── scripts/
+│   ├── urdf_to_usd_check.py              ← post-import sanity check: articulation root,
+│   │                                       joint drive enabled, mass nonzero, mesh ratio
+│   ├── multi_robot_bringup.py            ← N대 m0609+RG2 인스턴스화 + OG 팩토리 적용
+│   ├── check_namespace_isolation.py      ← ROS 2 토픽 namespace 충돌 검증
+│   └── replay_telemetry.py               ← Supabase cycle/joint 조회 → matplotlib 재생
+└── db/migrations/
+    ├── 0001_telemetry_schema.sql         ← 9 테이블 + 인덱스 + 뷰 (warehouse 텔레메트리)
+    └── 0002_indexes_supplemental.sql     ← 운영 중 추가 인덱스 자리 (placeholder)
 ```
 
 Each reference is written to be readable on its own. Cross-references between files

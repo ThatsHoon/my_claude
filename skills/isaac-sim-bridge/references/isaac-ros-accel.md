@@ -315,11 +315,95 @@ GPU 자원 공유 — Isaac Sim 의 RTX 와 Isaac ROS 의 TensorRT 가 같은 GP
 | Apriltag 검출이 시뮬에선 됐는데 real 안 됨 | 시뮬 카메라 K 가 real 과 다름 | calib 일치, distortion 모델 일치 |
 | `--network=host` 안 쓰면 Docker→Host ROS 안 보임 | DDS multicast 차단 | `--network=host` 또는 Fast-DDS discovery server |
 
+## isaac_ros_yolov8 사용 결정 (in-process YOLO 분리 시점)
+
+`yolo-perception.md §1` 의 결정 매트릭스를 정량적으로 보강. 본 스킬은 **in-process YOLO 1차 권장**, 다음 trigger 가 발생하면 isaac_ros_yolov8 + NITROS 로 분리.
+
+### 분리 trigger (수치 기준)
+
+| trigger | 측정 도구 | 임계 |
+|---|---|---|
+| GPU memory 사용률 | `nvidia-smi` 의 used/total | > 80% 1분 지속 |
+| Isaac Sim FPS | Kit 의 FPS counter 또는 `omni.kit.viewport` | < 30 fps 1분 지속 |
+| YOLO 추론 latency | ultralytics 의 `result.speed["inference"]` | > 1.5 × 기대치 (예: YOLOv8m FP16 16ms → 24ms 초과) |
+| PhysX step 시간 | `omni.physx.get_physx_interface().get_simulation_event_stream()` 의 step duration | > 25ms (40Hz 미만) |
+| 추론 큐가 쌓임 (만약 별도 큐로 구현 시) | logger 모니터링 | > 10 frame backlog |
+
+이 중 1개 이상 위반 + 지속이면 분리 검토. 자료실 `11-warehouse-sorting/isaac_ros_yolov8/repo/` 가 1차 참고.
+
+### isaac_ros_yolov8 셋업 요지
+
+```bash
+# Isaac ROS 컨테이너 (NVIDIA 의 docker 환경)
+cd /workspaces/isaac_ros-dev
+git clone https://github.com/NVIDIA-ISAAC-ROS/isaac_ros_object_detection.git
+# colcon build → install
+ros2 launch isaac_ros_yolov8 isaac_ros_yolov8_visualize.launch.py \
+  model_file_path:=/data/yolov8m.onnx \
+  engine_file_path:=/data/yolov8m.engine \
+  input_image_width:=1280 input_image_height:=720
+```
+
+### Isaac Sim ↔ isaac_ros_yolov8 연결
+
+핵심: **이미지를 ROS 토픽으로 전달하되, 같은 머신에 NITROS 노드를 둠**. NITROS 는 같은 머신/같은 컨테이너의 노드 간에는 NVMM (CUDA shared memory) 으로 zero-copy 전송. 단 Isaac Sim 의 OG `ROS2CameraHelper` 는 NITROS 가 아닌 표준 sensor_msgs/Image — 첫 hop 은 메모리 복사 발생.
+
+```
+Isaac Sim OG ─publish─→ sensor_msgs/Image (CPU memcpy 1회)
+        │
+        ▼
+isaac_ros_image_proc::ImageFormatConverterNode (NITROS bridge)
+        │ NVMM
+        ▼
+isaac_ros_yolov8::YoloV8DecoderNode (TensorRT 추론)
+        │
+        ▼ vision_msgs/Detection2DArray
+```
+
+첫 hop 의 CPU 복사가 거슬리면:
+- `isaac_ros_argus_camera` 처럼 Isaac Sim 의 카메라 출력을 직접 NVMM 으로 받는 어댑터를 작성 (실험적)
+- 또는 Isaac Sim 6.x 의 `IsaacComputeRTXLidarPointCloud` 류 GPU-native publish 노드 활용 가능 여부 점검
+
+본 스킬은 첫 hop 의 복사 비용 < 4 카메라 × 0.5ms = 2ms 정도로 추정, 무시.
+
+### 분리 후 GPU 예산 재계산
+
+| 항목 | in-process (4 cam, 4090 24GB) | isaac_ros_yolov8 분리 (4 cam, 4090 24GB) |
+|---|---:|---:|
+| Isaac Sim Kit/Omniverse | 2,500 | 2,500 |
+| PhysX | 600 | 600 |
+| RTX cameras | 4,800 | 4,800 |
+| ultralytics + TRT | 1,900 | 0 (별도 프로세스로 이동) |
+| 여유 | 3,000 | 4,900 |
+| isaac_ros_yolov8 별도 컨테이너 (같은 GPU) | 0 | 1,900 |
+| 결과 (한 GPU 기준) | ~12,800 | ~12,800 (동일) |
+| 다른 GPU 로 isaac_ros 옮긴 경우 | — | ~10,900 (해방됨) |
+
+같은 GPU 안에선 메모리는 같지만 **PhysX/RTX 와 inference 의 burst 충돌이 사라짐** — sim FPS 안정. 다른 GPU 가 있으면 메모리도 분산.
+
+### 분리 후 토픽 변경
+
+`yolo-perception.md §5` 의 토픽 명명은 그대로 유지. 변경되는 건 publisher 소유 노드만:
+
+- 기존 (in-process): Isaac Sim 안의 `YoloNode` 가 `/{robot_id}/yolo/detections` publish
+- 분리 후: `isaac_ros_yolov8::YoloV8DecoderNode` 가 `/{robot_id}/yolo/detections` publish
+
+sort decision 노드, server bridge, telemetry logger 의 구독자는 무수정.
+
+### 안티패턴
+
+- ❌ 분리 trigger 측정 없이 "추론은 다 분리해야 한다" 며 처음부터 isaac_ros_yolov8 → 셋업 복잡도만 증가
+- ❌ 분리 후 NITROS 컨테이너 외부에서 Image 노드를 호스트로 옮김 — NVMM 깨짐, 복사 폭발
+- ❌ 분리 후 ROS_DOMAIN_ID 가 sim 과 다름 — detection 안 보임
+- ❌ TensorRT engine 을 분리된 컨테이너에서 export 안 함 — CUDA/TensorRT 버전 mismatch 로 로딩 실패
+
 ## See also
 
 - `omnigraph-ros-bridge.md` — Isaac Sim → ROS 데이터 발행
+- `yolo-perception.md §1, §9` — in-process YOLO 1차 가이드와 TensorRT export
+- `warehouse-sorting-pipeline.md §8` — GPU 예산 표
 - `isaaclab-rl.md` §10 — ONNX export 후 DNN inference 로
 - `physx-tuning.md` §11 — Jetson 에서 시뮬 안 돌리는 이유 (못 함)
 - `installation.md` §6 — Jetson 셋업
 - `ros2-architect` 스킬: `references/launch-system.md` (composable_node), `references/communication.md` (composable 컨테이너 패턴)
-- 원문: `08-isaac-ros/`, `09-github-repos/isaac_ros_*/`, `10-gap-fills/curobo/`, `10-gap-fills/moveit2-isaac/`
+- 원문: `08-isaac-ros/`, `09-github-repos/isaac_ros_*/`, `10-gap-fills/curobo/`, `10-gap-fills/moveit2-isaac/`, `11-warehouse-sorting/isaac_ros_yolov8/repo/`
