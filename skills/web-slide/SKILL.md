@@ -73,9 +73,9 @@ description: Use when creating PPT-style 16:9 web slides as a single static self
    - SVG `<text>` 는 자동 wrap 없음 — `snippets/svg-text-wrap.js` 헬퍼 사용
    - 좌표는 `references/16-9-layout.md` 의 grid 가이드 따름 (1320 폭, 30 px 마진)
 
-6. **검증**:
-   - `node ~/.claude/skills/web-slide/scripts/validate-slide.mjs <file.html>` → exit 0
-   - chrome-devtools-mcp 또는 브라우저로 모든 탭 클릭 + dark/light 토글 + 시각 오버플로우 확인
+6. **검증** — 2 단계:
+   - **정적**: `node ~/.claude/skills/web-slide/scripts/validate-slide.mjs <file.html>` → exit 0
+   - **라이브 (MCP)**: `references/live-preview-mcp.md` 의 표준 시퀀스 따름 — `chrome-devtools` MCP 로 모든 탭 자동 캡처 + console 에러 확인 + 다크/라이트 양쪽 검증. 발표용이면 LCP + 접근성까지. **정적 통과해도 라이브 검증으로만 잡히는 이슈가 9 종 이상** — 절대 생략 X.
    - `references/pitfalls.md` 의 5개 함정 체크리스트
 
 ---
@@ -719,6 +719,7 @@ detectSvgOverlap() 0 → §5.11 체크리스트 8/8 → validator 0 → 완료
 - `references/pitfalls.md` — 5개 함정 + 재현/탐지법
 - `references/reference-example.md` — cobot2 architecture-playground 줄번호 색인
 - `references/export.md` — PNG / PDF / PPTX 변환 방법
+- `references/live-preview-mcp.md` — `chrome-devtools` + `playwright` MCP 로 라이브 렌더링 검증 (다중 탭 캡처, console 에러, dark/light, LCP, 접근성)
 - `templates/blank-slide.html` — 1 탭 starter (Pretendard + JetBrains Mono CDN 포함)
 - `templates/multi-tab-shell.html` — 3 탭 starter (양분기 완비, 키보드 ←→T 단축키, 인쇄 호환, web font CDN)
 - `templates/slide-layouts/*.md` — 6 레이아웃 (title-hero / 3-column / architecture-diagram / timeline-history / metric-cards / sequence-diagram)

@@ -85,7 +85,22 @@ Claude Code CLI 안에서:
 `isaac-sim-mcp` 스킬은 isaac-sim-mcp MCP 서버 (별도 설치, §6 참고) 사용법을 다룬다.
 MCP 서버 미설치 PC 에서도 배치 자체는 진행 — 향후 설치 시 자동 활성화됨.
 
-## 6. (선택) isaac-sim-mcp MCP 서버 설치
+## 6. Node.js 설치 (npx 기반 MCP 활성화 — 모든 PC)
+
+`chrome-devtools` 와 `playwright` MCP 는 `npx` 로 spawn 되므로 Node.js 필요. 미설치
+시 두 MCP 가 "Failed to connect" 로 잠자고, `web-slide` 의 라이브 검증 워크플로우가
+동작 안 함.
+
+```bash
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt-get install -y nodejs
+node --version    # v20.x 확인
+```
+
+설치 후 Claude Code 세션 재시작 → `claude mcp list` 에서 `playwright` 와
+`chrome-devtools-mcp` 가 ✓ Connected 로 바뀜.
+
+## 7. (선택) isaac-sim-mcp MCP 서버 설치
 
 Isaac Sim 라이브 제어를 Claude 가 직접 하려면 MCP 서버가 필요하다. Isaac Sim 사용
 계획이 있는 PC 에서만 실행 (없으면 건너뜀).
@@ -147,7 +162,7 @@ alias isaac-mcp='~/dev_ws/isaac_sim/isaacsim/_build/linux-x86_64/release/isaac-s
 python3 ~/.claude/skills/isaac-sim-mcp/scripts/check_mcp_health.py
 ```
 
-## 7. 보고
+## 8. 보고
 
 완료 후 사용자에게 다음을 보고:
 

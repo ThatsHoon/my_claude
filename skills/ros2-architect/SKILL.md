@@ -179,6 +179,24 @@ When this skill is active, code written should:
 - **Project-local conventions** (CLAUDE.md instructions, internal style guides): user instructions
   always win over this skill.
 
+## Live MCP tools — when they apply
+
+ROS 2 is host-side middleware, so most MCP servers don't have a direct role. Three narrow cases
+where MCPs do help:
+
+- **Isaac Sim side of a ROS 2 topic** (OmniGraph publishers/subscribers inside Kit): use the
+  `isaac-sim-mcp` skill. The OG nodes that bridge Kit ↔ ROS 2 live in Isaac Sim's process; this
+  skill's `references/communication.md` covers the host side they talk to.
+- **Foxglove Studio / rosbridge_suite web UI debugging**: when a ROS 2 system exposes a browser
+  UI (Foxglove, custom dashboards over rosbridge), `chrome-devtools` MCP is the right tool —
+  navigate the page, inspect console errors, capture screenshots. The web-slide skill's
+  `references/live-preview-mcp.md` documents the chrome-devtools patterns.
+- **Headless launch + CLI inspection**: stays in plain `Bash` (run `ros2` CLI, `colcon test`,
+  etc.). No MCP needed and none would help.
+
+Everything else (writing nodes, designing launch files, debugging QoS) is plain code work —
+use this skill's references directly, no MCP layer.
+
 ## Related references in this skill
 
 ```

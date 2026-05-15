@@ -2029,6 +2029,32 @@ if __name__ == "__main__":
 스킬 `ros2-architect` 가 담당한다. 두 스킬이 동시에 활성화될 수 있으며, doosan-robotics 가 두
 산 특화, ros2-architect 가 일반론.
 
+## Isaac Sim 시뮬레이션 검증 — `isaac-sim-mcp` 와의 협업
+
+실 m0609 동작을 코딩하기 전에 Isaac Sim 으로 검증하는 워크플로우가 있다면 (cobot3 같은
+sim2real 파이프라인), `isaac-sim-mcp` 스킬이 짝이 된다. 역할 분담:
+
+- **doosan-robotics** (이 스킬): 실 로봇 SDK 사용법 — DSR_ROBOT2 API, dsr_controller2, RT 토픽,
+  vendor 함정. 즉 "어떤 명령을 보낼 것인가".
+- **isaac-sim-mcp**: Claude 가 Isaac Sim 안 m0609 (시뮬 측) 에 같은 명령을 즉시 꽂아 넣어
+  거동을 확인하는 통로. 즉 "그 명령을 시뮬에서 미리 돌려보기".
+
+전형적인 sim2real 사이클:
+1. 이 스킬의 패턴 (예: `movej` + RT 토픽 모니터링) 으로 동작 코드 작성
+2. `isaac-sim-mcp` 의 `cobot3-recipes.md` 를 따라 시뮬 m0609 에 동일 joint command 발행
+3. 시뮬 결과 캡처 → 안전성/궤적/시간 검증
+4. 검증 통과 시 실 로봇으로 deploy
+
+이 두 스킬은 sim2real gap 을 줄이는 데 함께 동작한다 — 어느 한쪽만으로는 검증 사이클이 닫히
+지 않는다. 두 스킬이 동시 활성화될 때 의사결정 분기:
+
+| 작업 | 어느 스킬 |
+|---|---|
+| DSR_ROBOT2 함수 시그니처, 인자 의미 | doosan-robotics |
+| Isaac Sim 안 m0609 의 joint 제어, 카메라 추가 | isaac-sim-mcp |
+| 실 로봇 모드 전환 (servo/standby) | doosan-robotics |
+| 두 worlds 사이 joint command 동기화 | 양쪽 모두 (interface = `sensor_msgs/JointState`) |
+
 ## 코드 작성 권장 순서 (체크리스트)
 
 새 동작 코드를 작성할 때:
