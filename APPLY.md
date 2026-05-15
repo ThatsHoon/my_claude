@@ -74,6 +74,7 @@ Claude Code CLI 안에서:
 | --- | --- |
 | `skills/web-slide/` | `~/.claude/skills/web-slide/` |
 | `skills/isaac-sim-bridge/` | `~/.claude/skills/isaac-sim-bridge/` |
+| `skills/isaac-sim-mcp/` | `~/.claude/skills/isaac-sim-mcp/` |
 | `skills/ros2-architect/` | `~/.claude/skills/ros2-architect/` |
 | `skills/doosan-robotics/` | `~/.claude/skills/doosan-robotics/` |
 
@@ -81,7 +82,72 @@ Claude Code CLI 안에서:
 `doosan-robotics` 와 `ros2-architect` 는 두산 m0609 작업 컨텍스트가 없는 PC 에서는
 참고용이지만, 배치 자체는 항상 진행한다.
 
-## 6. 보고
+`isaac-sim-mcp` 스킬은 isaac-sim-mcp MCP 서버 (별도 설치, §6 참고) 사용법을 다룬다.
+MCP 서버 미설치 PC 에서도 배치 자체는 진행 — 향후 설치 시 자동 활성화됨.
+
+## 6. (선택) isaac-sim-mcp MCP 서버 설치
+
+Isaac Sim 라이브 제어를 Claude 가 직접 하려면 MCP 서버가 필요하다. Isaac Sim 사용
+계획이 있는 PC 에서만 실행 (없으면 건너뜀).
+
+### 6-1. `uv` (Astral 패키지 매니저) 설치
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+### 6-2. isaac-sim-mcp 레포 클론
+```bash
+git clone https://github.com/omni-mcp/isaac-sim-mcp.git ~/dev_ws/isaac-sim-mcp
+```
+
+### 6-3. venv + `mcp[cli]` 설치
+```bash
+cd ~/dev_ws/isaac-sim-mcp
+uv venv .venv
+uv pip install --python .venv/bin/python "mcp[cli]" httpx
+```
+
+### 6-4. server.py 패치 (FastMCP API 호환)
+`isaac_mcp/server.py` 의 `FastMCP(...)` 호출에서 `description=` → `instructions=` 로 변경
+(최신 mcp 라이브러리는 `description` 키워드를 받지 않음).
+
+### 6-5. Claude Code 에 MCP 서버 등록
+```bash
+claude mcp add isaac-sim --scope user -- \
+  ~/dev_ws/isaac-sim-mcp/.venv/bin/python \
+  ~/dev_ws/isaac-sim-mcp/isaac_mcp/server.py
+```
+확인:
+```bash
+claude mcp list | grep isaac-sim
+```
+
+### 6-6. Isaac Sim 빌드의 python.sh 패치 (packman USD 경로 추가)
+소스 빌드 케이스에서 `pxr` 모듈이 PYTHONPATH 누락. `python.sh` 의 `source setup_python_env.sh` 다음 줄에 추가:
+```bash
+_PACKMAN_USD=$(ls -d ${HOME}/.cache/packman/chk/usd.py311*/*/lib/python 2>/dev/null | head -1)
+if [ -n "$_PACKMAN_USD" ]; then
+    export PYTHONPATH=$PYTHONPATH:$_PACKMAN_USD
+fi
+```
+
+### 6-7. `~/.bashrc` 에 alias 추가
+```bash
+alias isaac-mcp='~/dev_ws/isaac_sim/isaacsim/_build/linux-x86_64/release/isaac-sim.sh \
+  --ext-folder ~/dev_ws/isaac-sim-mcp/ \
+  --enable isaac.sim.mcp_extension'
+```
+
+이후 새 터미널에서 `isaac-mcp` 로 Isaac Sim 띄우면 extension 자동 로드 (localhost:8766).
+
+### 6-8. 진단
+`isaac-sim-mcp` 스킬에 헬스체크 스크립트 포함:
+```bash
+python3 ~/.claude/skills/isaac-sim-mcp/scripts/check_mcp_health.py
+```
+
+## 7. 보고
 
 완료 후 사용자에게 다음을 보고:
 
@@ -89,4 +155,5 @@ Claude Code CLI 안에서:
 - 등록한 마켓플레이스
 - 설치한 플러그인 목록 (성공/실패 분리)
 - 배치한 사용자 스킬 목록
+- (시도했다면) MCP 서버 설치 결과 — `claude mcp list` 출력 포함
 - 건너뛴 항목과 이유
