@@ -198,6 +198,14 @@ When this skill is active, MCP usage should:
 - **Never** call MCP tools when `get_scene_info` reports `Connection refused` — first
   ask the user to start Isaac Sim with `isaac-mcp` (the alias) and wait for "Listening
   on localhost:8766"
+- **Never** call `open_stage()` inside `execute_script` — it is the main trigger of
+  the server-thread death (KIT_UP/PORT_DOWN). Launch Isaac Sim with the `scene.usd`
+  path as an argument instead. See `debugging.md §10`
+- **Result handling**: the patched `server.py` returns `execute_script` output as a
+  real JSON string — read `status`/`message`/`traceback` directly. The old
+  `/tmp`-file workaround is **no longer needed** on the fixed build; don't add the
+  round-trip. If the socket dies, the in-extension watchdog self-heals in ~3s
+  (`debugging.md §9, §10`)
 
 ## Local context — this user's setup
 

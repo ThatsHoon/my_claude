@@ -220,3 +220,40 @@ distro 가 안 맞으면 발생하는 증상:
 - `usd-from-urdf.md` §"Importer 확장 활성화" — URDF/MJCF 임포터
 - `isaac-ros-accel.md` §"Jetson 성능 튜닝" — Jetson 측 최적화
 - `ros2-architect` 스킬: `references/workspace-and-build.md` — host ROS 2 워크스페이스 셋업 정석
+
+---
+
+## Isaac 내부 ROS2 ↔ 호스트 ROS2 — 같은-PC DDS 한계 (중요)
+
+Isaac Sim 5.x 는 **자체 번들 ROS2**(빌드의 Python, 예: 5.1=Python 3.11)를
+쓴다. 호스트 ROS 2 Humble 은 Python 3.10. **같은 호스트에서 Isaac 내부 DDS
+↔ 시스템 DDS 가 디스커버리되지 않는** 사례가 있다(Isaac 측 발행 정상이나
+외부 `ros2 topic info` Publisher 0).
+
+검증된 사실(같은-호스트는 다 실패): cyclone 통일+`CYCLONEDDS_URI` localhost
+peer / `LD_LIBRARY_PATH`=`exts/isaacsim.ros2.bridge/<distro>/lib` / 시스템
+ROS env scrub(→내부 rclpy 는 로드되나 여전히 미발견) / FastDDS UDP-only
+프로파일(= NVIDIA 공식 `IsaacSim-ros_workspaces/<distro>_ws/fastdds.xml`).
+→ **같은-호스트 한정 병리**.
+
+판단:
+- **2-PC LAN(머신 분리)** = 지원 경로. DDS 와이어는 ABI/Python버전 무관 →
+  같은 `ROS_DOMAIN_ID` + `fastdds.xml`(UDP-only) 로 동작.
+- **같은-PC 개발/검증** = ROS2 디스커버리에 매달리지 말고 **HTTP 직결 우회**
+  (`omnigraph-ros-bridge.md` §"ROS2 우회: HTTP POST"). 또는 NVIDIA 공식
+  `build_ros.sh`(Docker, Isaac-ABI Python)로 워크스페이스 빌드 후 C2 를
+  Isaac-호환 ROS2 컨테이너화(무겁다).
+
+## standalone 의 ROS 환경 격리 (scrub 레시피)
+
+Isaac `python.sh` standalone 이 **시스템 ROS 2 가 소싱된 셸**에서 실행되면
+Isaac(py3.11)이 시스템 rclpy(py3.10)를 만나 `Could not import rclpy` →
+번들 ROS2 모드가 깨진다. 런처에서 exec 전에 시스템 ROS 흔적 제거:
+```bash
+unset AMENT_PREFIX_PATH AMENT_CURRENT_PREFIX COLCON_PREFIX_PATH \
+      ROS_VERSION ROS_PYTHON_VERSION PYTHONPATH
+# LD_LIBRARY_PATH 에서 /opt/ros/* 및 IsaacSim-ros_workspaces 토큰 제거
+# 그 후 RMW_IMPLEMENTATION + (필요시) Isaac 번들 <distro>/lib 만 추가
+```
+이러면 Isaac 가 **자체 번들 내부 rclpy** 를 깨끗이 로드한다(로그
+`Attempting to load internal rclpy ... rclpy loaded`).

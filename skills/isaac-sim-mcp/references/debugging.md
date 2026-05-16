@@ -266,39 +266,99 @@ Common cases:
 
 ---
 
-## 9. execute_script 래퍼 버그 — dict 반환 → validation 에러 (코드는 실행됨)
+## 9. execute_script dict 반환 → validation 에러 — **2026-05 코드에서 수정됨**
 
-**증상**: `execute_script` 호출이 항상 다음으로 끝남:
+**증상(과거)**: `execute_script` 가 항상
 `Error executing tool execute_script: 1 validation error ... result Input should be
-a valid string [type=string_type, input_value={'status': '...', ...}]`
+a valid string [type=string_type, input_value={'status': '...', ...}]` 로 끝남.
 
-**근본 원인**: MCP 래퍼가 Kit 측 dict 반환을 string 으로 검증하려다 실패.
-**그러나 `input_value` 의 `'status'` 를 보라**:
-- `'status': 'success'` → **코드는 정상 실행됨**(검증만 실패). 우회 불필요 —
-  코드가 만든 사이드이펙트(prim 변경, 파일)는 실재.
-- `'status': 'error'` (+ message) → 코드가 실제로 raise. 진짜 디버깅 대상.
-- 응답이 dict 가 아니라 깔끔한 에러면 Kit 미연결(§1) 가능.
+**근본 원인**: `server.py` 의 `execute_script` 가 `-> str` 로 선언됐는데 Kit 측
+dict 를 그대로 반환 → FastMCP/pydantic 이 string 검증 실패. 코드는 실행됐지만
+반환값을 못 받아 매 호출 `/tmp` 파일 우회를 강제했음.
 
-**결과 확인 워크어라운드 (필수 패턴)**: 반환값을 신뢰할 수 없으므로
-스크립트가 결과를 **`/tmp` 파일에 write**, 이어서 **Bash `cat`** 으로 읽는다.
+**수정 (적용됨)**: `isaac_mcp/server.py` 의 `execute_script` 가
+`json.dumps(result, indent=2)` 문자열을 반환하도록 변경.
+→ **이제 결과·status·traceback 이 반환값으로 직접 온다. `/tmp` 우회 불필요.**
 
-```python
-# execute_script 안: 결과를 파일로
-open("/tmp/mcp_out.txt","w").write(repr(result))
-print("done")
-```
-```bash
-# 이어서 Bash 로 (MCP 반환 무시)
-cat /tmp/mcp_out.txt
-```
+**현재 규칙**:
+- 수정된 빌드에서는 반환 JSON 의 `status`/`message`/`traceback` 을 그대로 신뢰.
+- 여전히 `'status':'error'` 면 `traceback` 필드가 실제 원인 — 그걸 보고 고친다.
+- 깔끔한 connection 에러면 Kit 미연결(§1) 또는 포트 다운(§10).
 
-진단용 traceback 도 같은 방식:
-```python
-import traceback
-try: ...
-except Exception: open("/tmp/mcp_err.txt","w").write(traceback.format_exc())
-```
-파일이 비었거나 없으면 코드가 write 이전에 raise → traceback 파일 확인.
+**레거시 폴백** (수정 안 된 구 빌드에서만): 결과를 `/tmp` 에 write 후 Bash `cat`.
+수정된 빌드에선 이 우회를 **쓰지 말 것** — 왕복만 2배가 된다.
 
-**규칙**: status='success' 면 "실행됨"으로 간주하고 get_scene_info 또는
-`/tmp` 파일로 *실제 상태*를 검증한다. 같은 호출을 맹목 재시도하지 말 것.
+---
+
+## 10. KIT_UP / PORT_DOWN — 서버 스레드 사망 (워치독이 자동복구)
+
+**증상**: Kit 프로세스는 살아있는데 (`pgrep kit` 잡힘) 8766 포트가 닫힘
+(`ss -ltn | grep 8766` 없음), 모든 MCP 호출이 connection refused / `'status':'error'`.
+특히 **무거운 `omni.usd.get_context().open_stage()` 직후** 자주 발생.
+
+**근본 원인**: 익스텐션 소켓 서버 스레드가 죽으면 과거엔 **자동 복구 로직이
+전혀 없었다**. (추가로 `_start` 실패 시 `self.stop()` 오타 → AttributeError 가
+진짜 에러를 가렸음.)
+
+**수정 (적용됨, `extension.py`)**:
+- Kit update 이벤트 구독 **워치독**: 3초마다 `socket`/`server_thread` 헬스 체크,
+  죽었으면 `_restart_server()` 로 소켓 재바인드+스레드 재기동 (SO_REUSEADDR).
+- `self.stop()` → `self._stop()` 오타 수정, `listen(1)`→`listen(5)`.
+→ **이제 스레드가 어떤 이유로 죽어도 ~3초 내 자가 복구. PORT_DOWN 영구화 없음.**
+
+**그래도 호출이 실패하면**:
+1. 3~5초 기다린 뒤 1회 재시도 (워치독이 복구 중).
+2. 그래도면 `tail kit 로그`에서 `MCP watchdog: ... restarting` 출현 확인.
+3. 복구가 안 되면 Kit 자체 문제 → §1 진단 후 재기동.
+
+**예방책 — `open_stage` 트리거 회피**:
+- MCP `execute_script` 안에서 `open_stage()` 를 호출하지 말 것. 대신 **Isaac Sim
+  을 씬 파일과 함께 기동**:
+  ```bash
+  setsid bash -c '<isaac-sim.sh> --ext-folder <mcp> \
+    --enable isaac.sim.mcp_extension /path/to/scene.usd' </dev/null >log 2>&1 &
+  ```
+  기동 시 Kit 이 스테이지를 로드하므로 MCP open_stage 가 불필요 → 스레드 사망
+  트리거 자체를 제거. (워치독이 있어도 이 패턴이 가장 안정적.)
+
+---
+
+## 11. execute_script 결과 처리 (성공인데 validation 에러)
+
+소스빌드/특정 래퍼에서 `execute_script` 가 **코드는 정상 실행됐는데**
+`pydantic ... Input should be a valid string ... {'status':'success',
+'message':'Script executed successfully', 'result': None}` 로 반환되는
+경우가 있다. inner `status` 로 판별:
+- `status:'success'` → **코드 실행됨**(반환만 깨짐). 결과는 스크립트가
+  `/tmp/xxx.txt` 에 write 하게 하고 **Bash 로 read** 해 확인.
+- `status:'error'` → 실제 코드 예외(traceback 포함) → 그걸 디버그.
+패턴: 모든 진단/검증 스크립트는 끝에 `open('/tmp/...','w').write(요약)` →
+다음 턴에 `cat /tmp/...`. (verify 없이 write→write→write 금지.)
+
+## 12. JSON parse 노이즈 — 무시
+
+`Parsing error: [json.exception.parse_error.101] ... last read: 's'` 가
+Isaac stdout/Console 에 무한 반복되면, 이는 `isaac.sim.mcp_extension`
+소켓(8766)에 **Claude 가 띄운 MCP relay(또는 stale 연결)** 가 비-JSON 을
+보내며 나는 노이즈. **시뮬/ROS/렌더와 무관, 무해.** 신경 쓰지 말 것
+(정 거슬리면 relay 프로세스 정리 또는 mcp 확장 비활성).
+
+## 13. 기동 라이프사이클 (Bash 툴 환경 특성)
+
+- `setsid bash -c '...isaac-sim.sh...' & disown` — Bash 툴 호출이 끝나면
+  프로세스 그룹이 정리돼 **Isaac 이 동반 종료**될 수 있음(로그 미생성 = 신호).
+- **GUI `isaac-sim.sh`** 를 harness `run_in_background` 로 띄우면 **DISPLAY
+  부재로 즉시 exit 144**(출력 0B). GUI 는 **사용자가 직접** 프롬프트에서
+  `! <런처>` 로 띄워야 함(사용자 X 세션 DISPLAY 사용).
+- **headless `python.sh <script>`** 는 harness `run_in_background` 로 안정
+  구동(렌더 필요 시 `SimulationApp({"headless":True,"renderer":...})` —
+  headless 라도 render product 는 생성됨).
+- MCP 준비 판정은 포트(8766)만으로 부족(릴레이가 항상 listen) — 로그에
+  "MCP server started on localhost:8766" 또는 실제 `execute_script` 성공으로.
+
+## 14. Isaac↔호스트 ROS2 가 안 보일 때
+
+같은-PC 에서 Isaac 발행 토픽이 호스트 `ros2` 에 안 보이면 MCP/OG 문제가
+아니라 **Isaac 번들 ROS2(빌드 Python) ↔ 시스템 ROS2 같은-호스트 DDS 불통**
+(상세 [[isaac-sim-bridge]] `installation.md`). MCP 로 풀 수 없음 — **2-PC
+LAN 또는 HTTP 직결 우회**로 전환(gp-quadruped `ros2-interop-and-bypass.md`).

@@ -396,5 +396,20 @@ pgrep -f "kit/kit.*mcp_extension" >/dev/null \
   && grep -qi "MCP server started on localhost:8766" /tmp/isaac.log \
   && echo MCP_READY || { echo FAILED; tail -15 /tmp/isaac.log; }
 ```
-준비 후 `get_scene_info` 로 연결 실검증한 뒤 작업. 결과 확인은
-`debugging.md §9`(execute_script /tmp 워크어라운드).
+준비 후 `get_scene_info` 로 연결 실검증한 뒤 작업. 수정된 빌드에서는
+`execute_script` 가 결과 JSON 을 직접 반환하므로 `/tmp` 우회 불필요
+(`debugging.md §9`). 포트 사망/자동복구는 `debugging.md §10`.
+씬 로드는 MCP `open_stage` 대신 위 기동 명령에 `scene.usd` 인자를 붙여
+처리 — `open_stage` 가 서버 스레드 사망 트리거이기 때문(§10).
+
+---
+
+## OmniGraph 재생성 함정 (cross-ref)
+
+기존 그래프가 있는 prim 경로에 `og.Controller.edit(CREATE_NODES)` 하면
+`graph already exists / Failed to wrap graph in node`. **`stage.RemovePrim
+(graph_path)` 후 fresh `og.Controller.edit`** 해야 함. 저장된 OG 가 비기능일
+수 있으니(예: defaultPrim 누락 참조) 신뢰 말고 재생성. standalone 에서는
+사전 `enable_extension("isaacsim.ros2.bridge")` + `update()` 펌프 필수 —
+상세 [[isaac-sim-bridge]] `omnigraph-ros-bridge.md`, 결과 검증/`/tmp` 패턴은
+`debugging.md §11`.

@@ -460,3 +460,37 @@ PublishJointState 노드에 두 articulation 섞지 말 것.
 함정: rgb/depth 를 같은 render product 에서 뽑되 helper 2개로 분기.
 topicName 네임스페이스(`/cam/...`, `/dsr01/...`)는 프로젝트 규약과 grep
 대조 후 고정. OG 노드 타입은 점표기(`isaacsim.ros2.bridge.*`).
+
+---
+
+## standalone python.sh 보일러플레이트 (OG ROS2 노드 등록)
+
+`isaac-sim.sh`(GUI/MCP)는 ros2.bridge 가 보통 enabled 지만, **standalone
+`python.sh` 앱은 자동 로드 안 됨** → `og.Controller.edit` 가
+`Could not find node type interface 'isaacsim.ros2.bridge.ROS2*'` 로 실패.
+씬 열기 전에 명시 enable + 등록될 때까지 app 펌프:
+```python
+from isaacsim.core.utils.extensions import enable_extension
+enable_extension("isaacsim.ros2.bridge")
+for _ in range(60):
+    simulation_app.update()      # 노드 타입 등록 대기
+# 이후 og.Controller.edit(...) 정상
+```
+또한 **기존 그래프 위에 CREATE_NODES 하지 말 것** — `graph already exists /
+Failed to wrap graph in node`. `stage.RemovePrim(graph_path)` 후
+fresh `og.Controller.edit` (저장된 비기능 OG 도 신뢰 말고 재생성).
+
+## ROS2 우회: 같은-PC 개발 시 HTTP POST 직결
+
+Isaac 내부 ROS2(빌드 Python) ↔ 호스트 ROS2 가 **같은 호스트에서 디스커버리
+실패**할 때(상세 `installation.md` §같은-PC DDS 한계), ROS2 디버깅에 매달리지
+말고 in-process 직결:
+- Isaac 단일 프로세스에서 **replicator annotator**(rgb/depth, OG render
+  product 에 attach) + **`isaacsim.core.prims.Articulation.get_joint_positions`**
+  + **XformCache** base pose 를 직접 읽어,
+- **백그라운드 스레드 HTTP POST**(urllib, Kit 루프 비차단)로 소비측 웹서버
+  ingest 엔드포인트에 전송. 영상은 raw ndarray 스트라이드 다운샘플로 보내고
+  JPEG 인코딩은 수신측에서(Isaac python 에 cv2/PIL 없을 수 있음).
+
+이는 같은-PC 임시 검증 전용. 2-PC LAN 이면 표준 OG ROS2 발행 사용.
+프로젝트 적용 예: gp-quadruped `references/ros2-interop-and-bypass.md`.

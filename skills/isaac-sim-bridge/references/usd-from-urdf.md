@@ -469,3 +469,19 @@ OG 발행은 `omnigraph-ros-bridge.md` §REALSENSE-DSR01.
 함정: 두 articulation 을 fixed 로 잇기 → articulation root/조인트 트리
 충돌 주의(베이스 로봇 articulation 에 m0609 를 흡수시키지 말 것). 결합 후
 베이스 보행 안정성 반드시 재검증(넘어짐 테스트).
+
+---
+
+## ★ defaultPrim 누락 → 무한 recompose (반드시 확인)
+
+URDF→USD 임포트로 dest USD 를 만들고 `add_reference_to_stage(dest_usd, path)`
+로 참조할 때, 참조는 파일의 **`<defaultPrim>`** 을 가리킨다. 임포트 옵션이
+`make_default_prim=False` 면 dest USD 에 defaultPrim 이 없어 **참조가 영구
+미해결** → USD 가 스테이지를 **무한 재합성**(Kit CPU 폭주, 모든 편집이 행).
+증상 로그: `[Warning][omni.usd] Unresolved reference prim path
+@dest.usd@<defaultPrim>`.
+
+대응(택1): 임포트 시 `cfg.make_default_prim=True`, 또는 임포트 후
+`Usd.Stage.Open(dest).SetDefaultPrim(<root>)` + `Save()`, 또는
+`add_reference_to_stage` 대신 명시 prim 경로로 참조. (gp-quadruped
+`references/debugging-instrumentation.md` 실사례)
