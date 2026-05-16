@@ -364,3 +364,37 @@ These patterns combine. A typical cobot3 startup looks like:
 
 See `cobot3-recipes.md` for the fleshed-out version of this with actual paths and
 values.
+
+---
+
+## Pattern: Claude 가 직접 Isaac Sim 을 detached 기동 + readiness 대기
+
+사용자가 "isaac 켜줘" 라고 하면 Claude 가 직접 띄워야 할 때.
+
+**핵심 함정**: Bash 툴 안에서 `nohup ... &` 만 하면 **툴 세션 종료 시 자식
+프로세스가 같이 죽는다**(로그 파일조차 안 생김). 반드시 `setsid` 로 새
+세션 분리:
+
+```bash
+setsid bash -c '~/dev_ws/isaac_sim/isaacsim/_build/linux-x86_64/release/isaac-sim.sh \
+  --ext-folder /home/rokey/dev_ws/isaac-sim-mcp/ --enable isaac.sim.mcp_extension' \
+  </dev/null >/tmp/isaac.log 2>&1 & disown
+```
+
+**포트 8766 listen ≠ Kit 준비**: MCP 릴레이 server.py 는 Isaac 없이도
+8766 을 연다. `ss | grep 8766` 으로 준비 판정하면 오판. `get_scene_info`
+가 pong 을 줘도 릴레이 자체 응답일 수 있어 `execute_script` 는 "Error
+executing code"(Kit 없음). **실제 준비 신호 = Kit 로그의**
+`Isaac Sim MCP server started on localhost:8766` (또는 동등 라인).
+
+**대기 패턴** (Bash run_in_background, 단일 알림, 실패도 커버):
+```bash
+until grep -qiE "MCP server started on localhost:8766" /tmp/isaac.log \
+   || grep -qiE "Fatal Error|failed to load .*mcp_extension" /tmp/isaac.log \
+   || ! pgrep -f "kit/kit.*mcp_extension" >/dev/null; do sleep 5; done
+pgrep -f "kit/kit.*mcp_extension" >/dev/null \
+  && grep -qi "MCP server started on localhost:8766" /tmp/isaac.log \
+  && echo MCP_READY || { echo FAILED; tail -15 /tmp/isaac.log; }
+```
+준비 후 `get_scene_info` 로 연결 실검증한 뒤 작업. 결과 확인은
+`debugging.md §9`(execute_script /tmp 워크어라운드).

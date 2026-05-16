@@ -435,3 +435,37 @@ stage.Export("robots/m0609_rg2.usda", args={"format": "usda"})
 - `sort-decision-logic.md §3` — TCP 기준 grasp pose
 - `doosan-robotics` 스킬: `references/launch-and-modes.md` — m0609 mode 와 TCP 정의
 - 원문: `04-urdf-usd/robot_setup/`, `04-urdf-usd/importer_exporter/`, `10-gap-fills/manipulators/doosan/`, `11-warehouse-sorting/rg2-gripper/`
+
+---
+
+## §M0609-PAYLOAD — 매니퓰레이터를 다른 로봇에 페이로드로 결합 (GP)
+
+m0609(또는 임의 팔)을 4족 등 베이스 로봇에 얹어 운반시키는 패턴.
+대표 사용처: gp-quadruped (ANYmal-C 등에 m0609 결합). 보행 정책과의
+상호작용은 [[gp-quadruped]] `locomotion-policy.md`, m0609 조인트/리미트는
+`doosan-robotics` `sim-integration.md` 위임.
+
+**1. URDF→USD**: `m0609_isaac_sim.urdf`
+(links `base,base_link,link_1..link_6,tool0`; joints `joint_1..joint_6`)
+→ `/World/Robot/m0609`. fixed base, position drive, self-collision off,
+collider convexHull (이 reference 상단 일반 절차 동일).
+
+**2. 베이스 결합 (fixed joint)**: m0609 `base_link` ↔ 베이스 로봇 link 사이
+`UsdPhysics.FixedJoint`(body0=베이스 로봇 마운트 link, body1=m0609
+base_link). 베이스 로봇은 자기 articulation(보행 정책), m0609 은 자기
+articulation(position drive)을 유지하고 fixed joint 로만 연결.
+
+**3. CoM 외란 완화 (근본 대응, 우회 금지)**: 팔을 얹으면 베이스 CoM 이
+이동해 보행 정책이 불안정해질 수 있다. 항상 3종 동반:
+- (a) m0609 각 링크 mass 를 페이로드 수준으로 스케일(관성텐서 동반 조정)
+- (b) 보행 중 6축을 **stow 자세**로 position drive hold(동적 토크 외란 제거)
+- (c) 그래도 불안정 시 페이로드 포함 정책 재학습(Isaac Lab) — 명시적 단계
+땜질(키프레임 보정 등) 금지. stow posj 값/리미트는 `doosan-robotics`
+`sim-integration.md`.
+
+**4. 센서 플랜지 부착**: RealSense 등은 `link_6`(플랜지) 자식 prim 으로.
+OG 발행은 `omnigraph-ros-bridge.md` §REALSENSE-DSR01.
+
+함정: 두 articulation 을 fixed 로 잇기 → articulation root/조인트 트리
+충돌 주의(베이스 로봇 articulation 에 m0609 를 흡수시키지 말 것). 결합 후
+베이스 보행 안정성 반드시 재검증(넘어짐 테스트).

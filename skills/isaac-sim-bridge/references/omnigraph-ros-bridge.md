@@ -426,3 +426,37 @@ bringup 후 `scripts/check_namespace_isolation.py` 가 ROS 2 topic 목록을 받
 - `warehouse-sorting-pipeline.md §4` — 본 팩토리의 전체 셋업 맥락
 - `ros2-architect` 스킬: `references/communication.md` (QoS), `references/tf2-urdf.md` (TF), `references/debugging.md` (ros2 doctor)
 - 원문: `02-ros2-bridge/ros2_tutorials/`, `03-omnigraph/omnigraph/`
+
+---
+
+## §REALSENSE-DSR01 — RealSense RGB-D + m0609 dsr01 joint 발행 (GP)
+
+플랜지 장착 RealSense 와 Doosan 네임스페이스 규약. GP 배선 전체는
+[[gp-quadruped]] `sensor-and-comms.md`.
+
+**RealSense Camera prim**: 로봇 링크(예 m0609 `link_6`) 자식으로 Camera prim.
+K 행렬은 focal/aperture 로 결정(하드코딩 금지):
+```
+fx = focal_mm / h_aperture_mm * width_px
+fy = focal_mm / v_aperture_mm * height_px
+cx = width/2 ; cy = height/2
+```
+OG: `IsaacCreateRenderProduct`(cameraPrim=…)
+ → `ROS2CameraHelper`(type="rgb", topicName=`/cam/realsense/rgb`)
+ → 동 render product 에 `ROS2CameraHelper`(type="depth",
+    topicName=`/cam/realsense/depth`). camera_info 는 helper 가 자동 발행.
+depth 는 annotator `distance_to_image_plane`(16UC1/32FC1). rgb/depth 는
+SensorData QoS(BEST_EFFORT, depth5).
+
+**dsr01 JointState 규약**: Doosan dsr_controller2 호환을 위해 m0609
+articulation 의 `ROS2PublishJointState` topicName 을 **`/dsr01/joint_states`**
+로 고정(실로봇과 동일 토픽 → sim/real 교체 가능). 베이스 로봇(예 ANYmal)
+다리 조인트는 별 토픽(`/robot/leg_joint_states`)으로 분리 발행 — 한
+PublishJointState 노드에 두 articulation 섞지 말 것.
+
+**발행측 fps/화질 저감**은 OG 가 아니라 별도 ROS 노드(video_degrade)에서:
+`ros2-architect` `web-bridge-streaming.md` §IMAGE-THROTTLE 위임.
+
+함정: rgb/depth 를 같은 render product 에서 뽑되 helper 2개로 분기.
+topicName 네임스페이스(`/cam/...`, `/dsr01/...`)는 프로젝트 규약과 grep
+대조 후 고정. OG 노드 타입은 점표기(`isaacsim.ros2.bridge.*`).

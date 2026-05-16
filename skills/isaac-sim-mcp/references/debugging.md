@@ -263,3 +263,42 @@ Common cases:
 5. If error is OG-related, [[isaac-sim-bridge]] `omnigraph-ros-bridge.md`.
 6. If nothing matches → ask the user to send screenshot of `Window → Console` red
    lines, plus the last 30 lines of `tail -F` on the kit log.
+
+---
+
+## 9. execute_script 래퍼 버그 — dict 반환 → validation 에러 (코드는 실행됨)
+
+**증상**: `execute_script` 호출이 항상 다음으로 끝남:
+`Error executing tool execute_script: 1 validation error ... result Input should be
+a valid string [type=string_type, input_value={'status': '...', ...}]`
+
+**근본 원인**: MCP 래퍼가 Kit 측 dict 반환을 string 으로 검증하려다 실패.
+**그러나 `input_value` 의 `'status'` 를 보라**:
+- `'status': 'success'` → **코드는 정상 실행됨**(검증만 실패). 우회 불필요 —
+  코드가 만든 사이드이펙트(prim 변경, 파일)는 실재.
+- `'status': 'error'` (+ message) → 코드가 실제로 raise. 진짜 디버깅 대상.
+- 응답이 dict 가 아니라 깔끔한 에러면 Kit 미연결(§1) 가능.
+
+**결과 확인 워크어라운드 (필수 패턴)**: 반환값을 신뢰할 수 없으므로
+스크립트가 결과를 **`/tmp` 파일에 write**, 이어서 **Bash `cat`** 으로 읽는다.
+
+```python
+# execute_script 안: 결과를 파일로
+open("/tmp/mcp_out.txt","w").write(repr(result))
+print("done")
+```
+```bash
+# 이어서 Bash 로 (MCP 반환 무시)
+cat /tmp/mcp_out.txt
+```
+
+진단용 traceback 도 같은 방식:
+```python
+import traceback
+try: ...
+except Exception: open("/tmp/mcp_err.txt","w").write(traceback.format_exc())
+```
+파일이 비었거나 없으면 코드가 write 이전에 raise → traceback 파일 확인.
+
+**규칙**: status='success' 면 "실행됨"으로 간주하고 get_scene_info 또는
+`/tmp` 파일로 *실제 상태*를 검증한다. 같은 호출을 맹목 재시도하지 말 것.

@@ -325,3 +325,30 @@ USING (robot_id = ANY (
 - `server-bridge.md §7` — Prometheus 메트릭 vs supabase 쿼리 선택
 - `replay_telemetry.py` (scripts/) — 본 reference 의 쿼리를 사용하는 도구
 - 외부: `supabase` 스킬 전반, `supabase:supabase-postgres-best-practices` (인덱스/쿼리 최적화)
+
+---
+
+## §GP-SCHEMA — GP 경계로봇 스키마 적응 (로컬 Postgres)
+
+warehouse 9테이블 구조를 GP 로 적응(`0003_gp_schema.sql`). 마이그 패턴·
+asyncpg COPY 배치·보관 정책은 본 reference 본문과 동일. 단일 적재 노드.
+
+| 적응/신규 테이블 | 출처 | 핵심 컬럼 |
+|---|---|---|
+| `intruder_detections` | ← detections | ts, class_name, conf, bbox, world_xyz, beyond_fence bool |
+| `patrol_runs` | ← cycles(UUID) | start_ts, end_ts, route_id, success, dist_m |
+| `patrol_events` | ← cycle_events | run_id, ts, event_type(START\|WAYPOINT\|ARRIVE\|AIM\|FIRE\|RETURN), meta JSONB |
+| `gps_track` | 신규 | ts, lat, lon, alt, x, y — **BRIN(ts)** |
+| `fire_events` | 신규 | ts, operator, target_ref, hit bool, distance_m |
+| `rosout_warn` | 신규 | ts, level(>=30), node_name, msg |
+| `joint_snapshots` | 재사용 | ts, q[6](m0609), leg_q[12], 10Hz 다운샘플, BRIN |
+| `robots` | 재사용 | robot_id, name |
+
+**저장 정책 (강제)**: **영상 프레임은 DB 저장 금지**. RealSense rgb/depth
+원본은 WebRTC/토픽 전송 전용. 그 외(GPS·상태·`/dsr01/joint_states`·leg·
+rosout WARN·탐지 메타·FireEvent·순찰이벤트) **전부 psql**. YOLO 는 결과
+*메타데이터만* 적재(프레임 미적재). 보관: gps_track/joint_snapshots 14일,
+intruder_detections 30일, patrol_*/fire_events 1년.
+
+세부 배선은 [[gp-quadruped]] `sensor-and-comms.md`, 권위는
+`gp-quadruped-system-design.md` §13.
