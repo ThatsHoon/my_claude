@@ -343,6 +343,19 @@ Isaac stdout/Console 에 무한 반복되면, 이는 `isaac.sim.mcp_extension`
 보내며 나는 노이즈. **시뮬/ROS/렌더와 무관, 무해.** 신경 쓰지 말 것
 (정 거슬리면 relay 프로세스 정리 또는 mcp 확장 비활성).
 
+종종 `[Error] [omni.usd-abi.plugin] IRenderSettings::getRenderSettings
+failed getting a stage-id` 가 **1:1 로 끼어** 같이 폭주한다 — 같은
+실패 왕복의 짝일 뿐 동일하게 무해.
+
+**cobot3-isaacSim-gui / run_camera_pub*.sh 와 비양립**: 이들은
+standalone `python.sh`(mcp 확장 미적재)다. isaac-sim MCP 서버가 동시에
+떠 있으면 빈 8766 소켓을 계속 두드려 위 두 줄이 매 틱 폭주(무해하나
+시끄러움). **근본조치(둘 중 하나)**: ① MCP 워크플로가 아니면 서버 비활성
+`claude mcp remove "isaac-sim" -s user`(되돌리기 `claude mcp add isaac-sim
+-s user -- <venv python> <isaac_mcp/server.py>`), ② MCP 가 필요하면
+standalone 대신 `--enable isaac.sim.mcp_extension` 로 띄워 소켓에 정상
+JSON 피어를 둔다. 증상 가림(로그 필터)은 지양 — 위 ①/②가 근본.
+
 ## 13. 기동 라이프사이클 (Bash 툴 환경 특성)
 
 - `setsid bash -c '...isaac-sim.sh...' & disown` — Bash 툴 호출이 끝나면
