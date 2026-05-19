@@ -279,6 +279,9 @@ When this skill is active, code written should:
 - **Never** call `simulation_app.update()` in a loop without checking the timestep.
   At the wrong timestep this silently changes simulation behavior. Use
   `world.step(render=True)` (Isaac Sim Core API) which encapsulates the right pattern.
+- **CRITICAL — `render=True` required for OmniGraph ROS2 nodes.** `world.step(render=False)` silently disables the `OnPlaybackTick` pulse, so all OG ROS2 nodes (camera publishers, JointState, Odometry, TF, cmd_vel subscriber) never execute. Always use `world.step(render=True)` in the main loop whenever ROS2 topics must be published.
+- **OG QoS requires all 8 keys.** Isaac OmniGraph's JSON QoS parser rejects profiles with missing keys even if defaults exist. Always provide the full 8-key object: `{"history":"keepLast","depth":N,"reliability":"reliable"|"bestEffort","durability":"volatile","deadline":0.0,"lifespan":0.0,"liveliness":"systemDefault","leaseDuration":0.0}`. Omitting any key silently creates no endpoint.
+- **FastDDS cross-host: UDP-only profile required.** Isaac Sim's bundled FastDDS (2.6.x) and system FastDDS have incompatible SharedMemory implementations. Set `FASTRTPS_DEFAULT_PROFILES_FILE` to a profile with `<transport_descriptors><UDPv4TransportDescriptor>` only (no `SharedMemTransportDescriptor`). Confirmed working for 2-PC LAN (Main 192.168.10.94 ↔ C2 192.168.10.105, domain=130).
 - **Never** put `time.sleep()` in an Isaac Sim main loop — it freezes the Kit event
   loop and can corrupt the OG graph state. Use `await
   omni.kit.app.get_app().next_update_async()` in async contexts.
