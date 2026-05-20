@@ -35,3 +35,12 @@
 - 엣지 케이스(빈 입력, 시작/종료 타이밍, 실패 경로)가 변경의 영향을 받는지 확인
 - 영향이 있으면 수정 또는 명시적으로 보고
 - 변경 후 "다른 기능에 영향 없음"을 자체 검증해 사용자에게 보고
+
+  1. **Ecosystem-first**: Search within the immediate ecosystem first (e.g., Claude Code skills/plugins, MCP servers on
+  Smithery/Glama, GitHub repos with "skill" or "plugin" in name) before falling back to generic framework comparisons.
+  2. **Practical over theoretical**: Prioritize "installable and usable right now" over "comparison articles" and "best
+  X framework" listicles. Search GitHub directly with star counts and recent activity.
+  3. **Query specificity**: Use ecosystem-specific terms in search queries (e.g., "Claude Code skill", "AgentSkill",
+  "MCP server", "plugin marketplace") rather than generic terms like "framework", "comparison", "best".
+  4. **Skip the survey**: Do not produce framework comparison tables unless explicitly asked. The user wants the single
+  best actionable tool, not a landscape overview.
