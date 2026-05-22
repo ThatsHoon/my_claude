@@ -70,19 +70,20 @@ Claude Code CLI 안에서:
 `skills/` 아래의 각 스킬 폴더를 `~/.claude/skills/` 로 그대로 복사한다.
 이미 같은 이름이 있으면 사용자에게 덮어쓸지 확인.
 
-| 소스 (이 레포) | 대상 경로 |
-| --- | --- |
-| `skills/web-slide/` | `~/.claude/skills/web-slide/` |
-| `skills/isaac-sim-bridge/` | `~/.claude/skills/isaac-sim-bridge/` |
-| `skills/isaac-sim-mcp/` | `~/.claude/skills/isaac-sim-mcp/` |
-| `skills/ros2-architect/` | `~/.claude/skills/ros2-architect/` |
-| `skills/doosan-robotics/` | `~/.claude/skills/doosan-robotics/` |
+| 소스 (이 레포) | 대상 경로 | 비고 |
+| --- | --- | --- |
+| `skills/web-slide/` | `~/.claude/skills/web-slide/` | |
+| `skills/isaac-sim-bridge/` | `~/.claude/skills/isaac-sim-bridge/` | |
+| `skills/isaac-sim-mcp/` | `~/.claude/skills/isaac-sim-mcp/` | |
+| `skills/ros2-architect/` | `~/.claude/skills/ros2-architect/` | m0609 없어도 배치 |
+| `skills/doosan-robotics/` | `~/.claude/skills/doosan-robotics/` | m0609 없어도 배치 |
+| `skills/mcp-builder/` | `~/.claude/skills/mcp-builder/` | MCP 서버 빌드 가이드 |
+| `skills/build-mcpb/` | `~/.claude/skills/build-mcpb/` | MCP 서버 개발 도구 |
+| `skills/gp-quadruped/` | `~/.claude/skills/gp-quadruped/` | GP 4족 보행 컨텍스트 |
 
 `~/.claude/skills/` 가 없으면 먼저 생성한다.
-`doosan-robotics` 와 `ros2-architect` 는 두산 m0609 작업 컨텍스트가 없는 PC 에서는
-참고용이지만, 배치 자체는 항상 진행한다.
 
-`isaac-sim-mcp` 스킬은 isaac-sim-mcp MCP 서버 (별도 설치, §6 참고) 사용법을 다룬다.
+`isaac-sim-mcp` 스킬은 `whats2000/isaacsim-mcp-server` (별도 설치, §7 참고) 사용법을 다룬다.
 MCP 서버 미설치 PC 에서도 배치 자체는 진행 — 향후 설치 시 자동 활성화됨.
 
 ## 6. Node.js 설치 (npx 기반 MCP 활성화 — 모든 PC)
@@ -111,34 +112,28 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-### 6-2. isaac-sim-mcp 레포 클론
+### 6-2. isaacsim-mcp-server 레포 클론
 ```bash
-git clone https://github.com/omni-mcp/isaac-sim-mcp.git ~/dev_ws/isaac-sim-mcp
+git clone https://github.com/whats2000/isaacsim-mcp-server.git ~/dev_ws/isaacsim-mcp-server
 ```
 
-### 6-3. venv + `mcp[cli]` 설치
+### 6-3. 의존성 설치
 ```bash
-cd ~/dev_ws/isaac-sim-mcp
-uv venv .venv
-uv pip install --python .venv/bin/python "mcp[cli]" httpx
+cd ~/dev_ws/isaacsim-mcp-server
+uv sync
 ```
 
-### 6-4. server.py 패치 (FastMCP API 호환)
-`isaac_mcp/server.py` 의 `FastMCP(...)` 호출에서 `description=` → `instructions=` 로 변경
-(최신 mcp 라이브러리는 `description` 키워드를 받지 않음).
-
-### 6-5. Claude Code 에 MCP 서버 등록
+### 6-4. Claude Code 에 MCP 서버 등록
 ```bash
 claude mcp add isaac-sim --scope user -- \
-  ~/dev_ws/isaac-sim-mcp/.venv/bin/python \
-  ~/dev_ws/isaac-sim-mcp/isaac_mcp/server.py
+  uv run --directory ~/dev_ws/isaacsim-mcp-server isaacsim-mcp-server
 ```
 확인:
 ```bash
 claude mcp list | grep isaac-sim
 ```
 
-### 6-6. Isaac Sim 빌드의 python.sh 패치 (packman USD 경로 추가)
+### 6-5. Isaac Sim 빌드의 python.sh 패치 (packman USD 경로 추가)
 소스 빌드 케이스에서 `pxr` 모듈이 PYTHONPATH 누락. `python.sh` 의 `source setup_python_env.sh` 다음 줄에 추가:
 ```bash
 _PACKMAN_USD=$(ls -d ${HOME}/.cache/packman/chk/usd.py311*/*/lib/python 2>/dev/null | head -1)
@@ -147,16 +142,16 @@ if [ -n "$_PACKMAN_USD" ]; then
 fi
 ```
 
-### 6-7. `~/.bashrc` 에 alias 추가
+### 6-6. `~/.bashrc` 에 alias 추가
 ```bash
 alias isaac-mcp='~/dev_ws/isaac_sim/isaacsim/_build/linux-x86_64/release/isaac-sim.sh \
-  --ext-folder ~/dev_ws/isaac-sim-mcp/ \
+  --ext-folder ~/dev_ws/isaacsim-mcp-server/ \
   --enable isaac.sim.mcp_extension'
 ```
 
 이후 새 터미널에서 `isaac-mcp` 로 Isaac Sim 띄우면 extension 자동 로드 (localhost:8766).
 
-### 6-8. 진단
+### 6-7. 진단
 `isaac-sim-mcp` 스킬에 헬스체크 스크립트 포함:
 ```bash
 python3 ~/.claude/skills/isaac-sim-mcp/scripts/check_mcp_health.py

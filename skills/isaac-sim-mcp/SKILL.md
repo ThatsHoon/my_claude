@@ -213,10 +213,10 @@ When this skill is active, MCP usage should:
 |---|---|
 | Isaac Sim version | 5.1.0-rc.19 (source build at `~/dev_ws/isaac_sim/isaacsim/`) |
 | Launch alias | `isaac-mcp` (in `~/.bashrc`) — passes `--ext-folder` and `--enable isaac.sim.mcp_extension` |
-| MCP server path | `~/dev_ws/isaac-sim-mcp/isaac_mcp/server.py` |
-| MCP server venv | `~/dev_ws/isaac-sim-mcp/.venv/bin/python` |
+| MCP server repo | `~/dev_ws/isaacsim-mcp-server/` (`whats2000/isaacsim-mcp-server`, 42 tools) |
+| MCP server entry | `uv run --directory ~/dev_ws/isaacsim-mcp-server isaacsim-mcp-server` |
 | Port | `localhost:8766` |
-| Project | cobot3 — Doosan m0609 + RG2 gripper + YOLO + warehouse sorting |
+| Project | cobot3 — Go2 quadruped + YOLO + Nav2 + military ground patrol |
 | Sibling skills | `isaac-sim-bridge` (domain), `web-slide` (slides), `code-simplifier` etc. |
 
 ## Related references in this skill
