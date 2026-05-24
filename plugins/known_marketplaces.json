@@ -4,5 +4,11 @@
       "source": "github",
       "repo": "anthropics/claude-plugins-official"
     }
+  },
+  "anthropic-agent-skills": {
+    "source": {
+      "source": "github",
+      "repo": "anthropics/skills"
+    }
   }
 }

@@ -1,8 +1,8 @@
 {
-  "_comment": "~/.claude/settings.json 의 enabledPlugins 섹션. 새 PC 에서 settings.json 의 enabledPlugins 를 이 값으로 덮어쓰면 된다.",
+  "_comment": "~/.claude/settings.json \uc758 enabledPlugins \uc139\uc158. context7/serena \ub294 AIRIS Gateway \uac00 \ub0b4\ubd80\uc5d0 \ud3ec\ud568\ud558\ubbc0\ub85c \uc758\ub3c4\uc801\uc73c\ub85c false (\uc911\ubcf5 \ubc29\uc9c0).",
   "enabledPlugins": {
     "frontend-design@claude-plugins-official": true,
-    "context7@claude-plugins-official": true,
+    "context7@claude-plugins-official": false,
     "skill-creator@claude-plugins-official": true,
     "playwright@claude-plugins-official": true,
     "code-simplifier@claude-plugins-official": true,
@@ -11,12 +11,18 @@
     "superpowers@claude-plugins-official": true,
     "feature-dev@claude-plugins-official": true,
     "security-guidance@claude-plugins-official": true,
-    "serena@claude-plugins-official": true,
+    "serena@claude-plugins-official": false,
     "slack@claude-plugins-official": true,
     "chrome-devtools-mcp@claude-plugins-official": true,
     "huggingface-skills@claude-plugins-official": true,
     "playground@claude-plugins-official": true,
     "code-review@claude-plugins-official": true,
-    "supabase@claude-plugins-official": true
+    "supabase@claude-plugins-official": true,
+    "claude-code-setup@claude-plugins-official": true,
+    "document-skills@anthropic-agent-skills": true,
+    "typescript-lsp@claude-plugins-official": true,
+    "ralph-loop@claude-plugins-official": true,
+    "commit-commands@claude-plugins-official": true,
+    "pr-review-toolkit@claude-plugins-official": true
   }
 }

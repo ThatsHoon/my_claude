@@ -1,0 +1,26 @@
+{
+  "skill_name": "rive-web",
+  "evals": [
+    {
+      "id": 0,
+      "name": "react-integration",
+      "prompt": "Next.js 14 App Router 프로젝트에 Rive 애니메이션을 hero section으로 추가하려고 해. 디자이너가 'public/hero.riv'를 줬는데, 'Main' artboard에 'State Machine 1' 이라는 state machine이 있고 'Hover' (Boolean), 'IntroPlayed' (Trigger) 두 입력이 있다고 해. SSR-safe 하게 (서버에서 깨지지 않게) 만들고, hover 시 'Hover'를 true로, 마운트 후 한 번 'IntroPlayed'를 fire 하도록 해줘. Tailwind 쓰고 TypeScript 야. 패키지는 어떤 걸 깔아야 하고 컴포넌트 코드 풀로 보여줘. retina에서 흐릿하지 않게 하는 것도 잊지 말고.",
+      "expected_output": "components/Hero.tsx (TS, 'use client'), npm install line for @rive-app/react-canvas (or webgl2). Uses useRive + useStateMachineInput. Triggers IntroPlayed once via useEffect. Hover input toggled on mouse enter/leave. Calls resizeDrawingSurfaceToCanvas on load + resize OR sets useDevicePixelRatio. Doesn't import the wrong package (rive-react) or use SSR-unsafe top-level imports.",
+      "files": []
+    },
+    {
+      "id": 1,
+      "name": "interpret-riv",
+      "prompt": "팀에서 받은 onboarding.riv 파일 구조를 받았어. 에디터에서 보이는 내용은 이래: Artboard 'Main' / State Machine 'Onboarding SM' (inputs: IsLoggedIn=Bool, Step=Number, Continue=Trigger) / View Model 'UserVM' (username: string, avatarUrl: image, unreadCount: number) / Rive Events: 'open_terms' (Open URL), 'finished' (General). 각 요소가 런타임에 무슨 의미인지 해석하고, React 앱에서 이 파일을 통합할 때의 권장 코드 흐름과 각 입력/뷰모델 속성이 어떤 UX를 의도한 것 같은지 추론해줘. Rive events 두 개도 어떻게 처리해야 하는지 코드로.",
+      "expected_output": "Structured interpretation with sections: artboard/state-machine summary, what each input likely does, what the view-model properties drive (image-binding for avatar, number for badge count, string for greeting), event handling (Open URL vs General payload, hooking riveInstance.on(EventType.RiveEvent) or useRiveEvents). Includes runnable React snippet bindViewModelInstance + setting properties + listening to events. Distinguishes view-model properties from state-machine inputs.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "name": "export-and-assets",
+      "prompt": "Rive 에디터에서 만든 splash.riv 를 export 했더니 .riv 파일 단독이 아니라 zip 으로 떨어졌어. 안에 이미지 몇 개랑 폰트가 같이 들어있어. Next.js 프로젝트에서 이걸 어떻게 풀고 어떻게 런타임에 로드해야 해? 그리고 Rive 에디터의 Export 메뉴에서 'For runtime' 과 'For backup' 옵션이 뭐가 다른지, 'Referenced' vs 'Embedded' asset 차이도 같이 설명해줘.",
+      "expected_output": "Explains zip = Referenced assets exported alongside .riv (not embedded). Recommends an asset loader / decodeAsset callback in @rive-app/canvas/webgl2 (assetLoader option) that maps asset name -> file URL, and references decodeImage / decodeFont APIs. Distinguishes 'For runtime' (binary optimized for runtime, may strip editor metadata) vs 'For backup' (full editor-state .rev / .riv preserving editability). Distinguishes Referenced (file external, smaller binary, runtime fetches) from Embedded (in .riv, simpler, larger). Practical Next.js advice: place files in /public, reference via fetch in assetLoader.",
+      "files": []
+    }
+  ]
+}
