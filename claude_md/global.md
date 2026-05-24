@@ -36,11 +36,24 @@
 - 영향이 있으면 수정 또는 명시적으로 보고
 - 변경 후 "다른 기능에 영향 없음"을 자체 검증해 사용자에게 보고
 
-  1. **Ecosystem-first**: Search within the immediate ecosystem first (e.g., Claude Code skills/plugins, MCP servers on
-  Smithery/Glama, GitHub repos with "skill" or "plugin" in name) before falling back to generic framework comparisons.
-  2. **Practical over theoretical**: Prioritize "installable and usable right now" over "comparison articles" and "best
-  X framework" listicles. Search GitHub directly with star counts and recent activity.
-  3. **Query specificity**: Use ecosystem-specific terms in search queries (e.g., "Claude Code skill", "AgentSkill",
-  "MCP server", "plugin marketplace") rather than generic terms like "framework", "comparison", "best".
-  4. **Skip the survey**: Do not produce framework comparison tables unless explicitly asked. The user wants the single
-  best actionable tool, not a landscape overview.
+## 도구·라이브러리 추천 검색 전략
+
+사용자가 "X 할 만한 도구/라이브러리/프레임워크/서버" 를 물어볼 때 따른다.
+
+- **생태계 우선** — Claude Code skill/plugin, MCP server (Smithery, Glama 등
+  레지스트리), GitHub 에서 `skill`/`plugin`/`mcp` 키워드 레포 먼저 확인.
+  Claude 생태계에 답이 없을 때만 generic 라이브러리/프레임워크로 확장.
+- **설치 가능한 것 우선** — "best X 2026" / "top 5 frameworks" 류 listicle
+  대신 GitHub 레포 직접 검색. star 수 + recent commit 활동으로 신호 판단.
+  medium/dev.to/towardsdatascience 비교글은 후순위.
+- **쿼리 특정성** — 검색 쿼리에 생태계 용어 사용:
+  `Claude Code skill`, `AgentSkill`, `MCP server`, `plugin marketplace`,
+  `site:github.com stars:>N`. `framework comparison best` 같은 generic
+  키워드 회피.
+- **단일 추천 원칙** — 비교 표/landscape overview 만들지 말 것. 기본 응답은
+  "X 추천 → 이유 → 대안 1-2 개" 형식. 사용자가 명시적으로 "비교해줘",
+  "옵션들 정리해줘", "이것보다 나은 거 있어?" 라고 비교를 요청했을 때만
+  표 사용 (이때도 4 행 이하로 간결하게).
+- **답이 framework 자체가 적절한 경우는 예외** — generic 라이브러리가 진짜
+  표준 답인 도메인 (예: numpy, sentence-transformers, pytorch) 에서는
+  Claude 생태계 안에 억지로 매칭하지 말고 표준 답 직행.
