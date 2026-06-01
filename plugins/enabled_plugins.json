@@ -1,5 +1,5 @@
 {
-  "_comment": "~/.claude/settings.json \uc758 enabledPlugins \uc139\uc158. context7/serena \ub294 AIRIS Gateway \uac00 \ub0b4\ubd80\uc5d0 \ud3ec\ud568\ud558\ubbc0\ub85c \uc758\ub3c4\uc801\uc73c\ub85c false (\uc911\ubcf5 \ubc29\uc9c0).",
+  "_comment": "~/.claude/settings.json 의 enabledPlugins 섹션. context7/serena 는 AIRIS Gateway 가 내부에 포함하므로 의도적으로 false (중복 방지).",
   "enabledPlugins": {
     "frontend-design@claude-plugins-official": true,
     "context7@claude-plugins-official": false,
@@ -23,6 +23,9 @@
     "typescript-lsp@claude-plugins-official": true,
     "ralph-loop@claude-plugins-official": true,
     "commit-commands@claude-plugins-official": true,
-    "pr-review-toolkit@claude-plugins-official": true
+    "pr-review-toolkit@claude-plugins-official": true,
+    "andrej-karpathy-skills@karpathy-skills": true,
+    "watch@claude-video": true,
+    "understand-anything@understand-anything": true
   }
 }

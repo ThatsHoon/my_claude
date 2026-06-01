@@ -10,5 +10,23 @@
       "source": "github",
       "repo": "anthropics/skills"
     }
+  },
+  "karpathy-skills": {
+    "source": {
+      "source": "github",
+      "repo": "forrestchang/andrej-karpathy-skills"
+    }
+  },
+  "claude-video": {
+    "source": {
+      "source": "github",
+      "repo": "bradautomates/claude-video"
+    }
+  },
+  "understand-anything": {
+    "source": {
+      "source": "github",
+      "repo": "Lum1104/Understand-Anything"
+    }
   }
 }

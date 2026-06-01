@@ -21,6 +21,9 @@
 ```
 github:anthropics/claude-plugins-official
 github:anthropics/skills            # anthropic-agent-skills (document-skills 번들 출처)
+github:forrestchang/andrej-karpathy-skills
+github:bradautomates/claude-video
+github:Lum1104/Understand-Anything
 ```
 
 Claude Code CLI 안에서:
@@ -28,6 +31,9 @@ Claude Code CLI 안에서:
 ```
 /plugin marketplace add anthropics/claude-plugins-official
 /plugin marketplace add anthropics/skills
+/plugin marketplace add forrestchang/andrej-karpathy-skills
+/plugin marketplace add bradautomates/claude-video
+/plugin marketplace add Lum1104/Understand-Anything
 ```
 
 ## 3. 플러그인 설치
@@ -70,12 +76,24 @@ Claude Code CLI 안에서:
 
 - `document-skills`
 
+### 3-3. `karpathy-skills` 에서 설치 (1 개)
+
+- `andrej-karpathy-skills`
+
+### 3-4. `claude-video` 에서 설치 (1 개)
+
+- `watch`
+
+### 3-5. `understand-anything` 에서 설치 (1 개)
+
+- `understand-anything`
+
 ## 4. 활성화 상태 동기화 (중요 — context7/serena 비활성)
 
 `plugins/enabled_plugins.json` 의 키/값을 그대로 `~/.claude/settings.json` 의
 `enabledPlugins` 섹션에 반영. **특히 `context7@claude-plugins-official`,
 `serena@claude-plugins-official` 두 개는 `false`** — AIRIS Gateway 가 내부에
-포함하므로 의도적으로 중복 제거. 다른 키는 모두 `true`.
+포함하므로 의도적으로 중복 제거. 나머지 25개는 모두 `true`.
 
 `theme` 등 다른 설정은 사용자의 PC 환경을 우선한다.
 
@@ -233,6 +251,8 @@ python3 ~/.claude/skills/isaac-sim-mcp/scripts/check_mcp_health.py
 - 비활성화한 플러그인 (context7, serena — AIRIS 중복 방지)
 - 배치한 필수 스킬 목록 (7 개)
 - 배치한 선택 스킬 목록 (설치한 것 / 건너뛴 것 분리)
+- 설치한 플러그인 목록 (총 26 개 — 성공/실패 분리)
+- 비활성화한 플러그인 (context7, serena — AIRIS 중복 방지)
 - AIRIS Gateway 설치 결과 (`claude mcp list | grep airis` 출력)
 - (시도했다면) isaac-sim-mcp 서버 설치 결과
 - Node.js 버전 (`node --version`)

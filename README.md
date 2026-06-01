@@ -18,8 +18,8 @@ AI 는 [APPLY.md](APPLY.md) 의 절차를 따라 CLAUDE.md, 플러그인, 사용
 | `claude_md/global.md` | `~/CLAUDE.md` (사용자 전역 규칙) 의 내용 |
 | `claude_md/cobot_ws.md` | `~/cobot_ws/CLAUDE.md` (Doosan m0609 워크스페이스 규칙) 의 내용 |
 | `plugins/enabled_plugins.json` | `~/.claude/settings.json` 의 `enabledPlugins` 섹션. `context7`/`serena` 는 AIRIS 와 중복되어 의도적으로 `false` |
-| `plugins/installed_plugins.json` | 설치할 마켓플레이스별 플러그인 목록 |
-| `plugins/known_marketplaces.json` | 등록할 플러그인 마켓 출처 |
+| `plugins/installed_plugins.json` | 설치할 마켓플레이스별 플러그인 목록 (26 개) |
+| `plugins/known_marketplaces.json` | 등록할 플러그인 마켓 출처 (5 개) |
 | `skills/<이름>/` | 필수 사용자 스킬 — `~/.claude/skills/<이름>/` 에 그대로 복사 |
 | `skills/optional/<이름>/` | 선택 사용자 스킬 — 설치 전 사용자 확인 필요 |
 

@@ -27,6 +27,15 @@
     ],
     "anthropic-agent-skills": [
       "document-skills"
+    ],
+    "karpathy-skills": [
+      "andrej-karpathy-skills"
+    ],
+    "claude-video": [
+      "watch"
+    ],
+    "understand-anything": [
+      "understand-anything"
     ]
   }
 }
