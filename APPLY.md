@@ -81,6 +81,8 @@ Claude Code CLI 안에서:
 
 ## 5. 사용자 스킬 배치
 
+### 5-1. 필수 스킬 (항상 설치)
+
 `skills/` 아래의 각 스킬 폴더를 `~/.claude/skills/` 로 그대로 복사한다.
 이미 같은 이름이 있으면 사용자에게 덮어쓸지 확인.
 
@@ -88,16 +90,29 @@ Claude Code CLI 안에서:
 | --- | --- | --- |
 | `skills/html-ppt/` | `~/.claude/skills/html-ppt/` | PPT 데크 (36 테마, 31 레이아웃, presenter mode) |
 | `skills/architecture-diagram/` | `~/.claude/skills/architecture-diagram/` | 다크 SVG 인프라 다이어그램 |
-| `skills/isaac-sim-bridge/` | `~/.claude/skills/isaac-sim-bridge/` | |
-| `skills/isaac-sim-mcp/` | `~/.claude/skills/isaac-sim-mcp/` | |
 | `skills/ros2-architect/` | `~/.claude/skills/ros2-architect/` | m0609 없어도 배치 |
 | `skills/doosan-robotics/` | `~/.claude/skills/doosan-robotics/` | m0609 없어도 배치 |
 | `skills/mcp-builder/` | `~/.claude/skills/mcp-builder/` | MCP 서버 빌드 가이드 |
 | `skills/build-mcpb/` | `~/.claude/skills/build-mcpb/` | MCP 서버 패키징 |
-| `skills/gp-quadruped/` | `~/.claude/skills/gp-quadruped/` | Spot 4족 경계초소 컨텍스트 |
 | `skills/rive-web/` | `~/.claude/skills/rive-web/` | Rive 웹 통합 |
 
 `~/.claude/skills/` 가 없으면 먼저 생성한다.
+
+### 5-2. 선택 스킬 (사용자에게 반드시 확인 후 설치)
+
+`skills/optional/` 아래의 스킬은 **특정 환경에서만 필요**하므로,
+설치 전에 사용자에게 **각 스킬을 개별적으로** 설치할지 물어봐야 한다.
+사용자가 "예" 라고 답한 스킬만 `~/.claude/skills/` 로 복사한다.
+
+| 스킬 | 소스 (이 레포) | 대상 경로 | 언제 필요한가 |
+| --- | --- | --- | --- |
+| `isaac-sim-bridge` | `skills/optional/isaac-sim-bridge/` | `~/.claude/skills/isaac-sim-bridge/` | NVIDIA Isaac Sim / Isaac Lab / Isaac ROS 작업 PC |
+| `isaac-sim-mcp` | `skills/optional/isaac-sim-mcp/` | `~/.claude/skills/isaac-sim-mcp/` | Isaac Sim MCP 서버로 라이브 제어하는 PC |
+| `gp-quadruped` | `skills/optional/gp-quadruped/` | `~/.claude/skills/gp-quadruped/` | Boston Dynamics Spot (cobot3 GP) 경계초소 작업 PC |
+
+**확인 방법**: 각 스킬에 대해 사용자에게 다음과 같이 질문한다.
+
+> `<스킬명>` 스킬을 설치할까요? (`<언제 필요한가>` 환경에서만 필요합니다.)
 
 ## 6. AIRIS MCP Gateway 설치 (필수 — MCP 단일 허브)
 
@@ -166,6 +181,7 @@ node --version
 ## 8. (선택) isaac-sim-mcp MCP 서버 설치
 
 Isaac Sim 라이브 제어를 Claude 가 직접 하려면 필요. Isaac Sim 사용 PC 만.
+§5-2 에서 `isaac-sim-mcp` 스킬 설치에 동의한 경우에만 진행한다.
 
 ### 8-1. `uv` 설치
 ```bash
@@ -215,7 +231,8 @@ python3 ~/.claude/skills/isaac-sim-mcp/scripts/check_mcp_health.py
 - 등록한 마켓플레이스 (2 개)
 - 설치한 플러그인 목록 (성공/실패 분리)
 - 비활성화한 플러그인 (context7, serena — AIRIS 중복 방지)
-- 배치한 사용자 스킬 목록 (10 개)
+- 배치한 필수 스킬 목록 (7 개)
+- 배치한 선택 스킬 목록 (설치한 것 / 건너뛴 것 분리)
 - AIRIS Gateway 설치 결과 (`claude mcp list | grep airis` 출력)
 - (시도했다면) isaac-sim-mcp 서버 설치 결과
 - Node.js 버전 (`node --version`)
