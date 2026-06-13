@@ -1,8 +1,8 @@
 {
-  "_comment": "~/.claude/settings.json 의 enabledPlugins 섹션. context7/serena 는 AIRIS Gateway 가 내부에 포함하므로 의도적으로 false (중복 방지).",
+  "_comment": "~/.claude/settings.json 의 enabledPlugins 섹션. AIRIS Gateway 없는 환경에서는 context7/serena 모두 true.",
   "enabledPlugins": {
     "frontend-design@claude-plugins-official": true,
-    "context7@claude-plugins-official": false,
+    "context7@claude-plugins-official": true,
     "skill-creator@claude-plugins-official": true,
     "playwright@claude-plugins-official": true,
     "code-simplifier@claude-plugins-official": true,
@@ -11,7 +11,7 @@
     "superpowers@claude-plugins-official": true,
     "feature-dev@claude-plugins-official": true,
     "security-guidance@claude-plugins-official": true,
-    "serena@claude-plugins-official": false,
+    "serena@claude-plugins-official": true,
     "slack@claude-plugins-official": true,
     "chrome-devtools-mcp@claude-plugins-official": true,
     "huggingface-skills@claude-plugins-official": true,
