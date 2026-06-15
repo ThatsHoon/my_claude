@@ -1,55 +1,8 @@
-# Claude Code Configuration
+## Dev Principle
 
-범용 규칙만. 프로젝트별 규칙은 각 워크스페이스 루트의 `CLAUDE.md` 에 둔다.
+**Avoid workarounds. Focus on fundamental, root-cause solutions.**
+**Delegate verbose context and heavy logic to Serena; treat LLM as a lean orchestrator.**
+**Maximize token efficiency by minimizing data echoing—rely on Serena's state management.**
+**Leverage MCP for "Result-First" outputs, bypassing step-by-step reasoning unless requested.**
 
-## 단순한 폴더 구조
 
-프로젝트의 폴더 구조는 **가급적 단순하게** 유지한다.
-
-- 깊은 중첩(3~4단계 이상) 금지 — 평탄한 구조 우선
-- 단일 파일로 충분한 기능을 굳이 디렉토리로 분리하지 않음
-- 불필요한 카테고리 디렉토리(`utils/`, `helpers/`, `misc/` 등) 남발 금지
-- 기존 구조를 따를 때도 추가 분기 만들기 전에 평탄화 가능한지 먼저 검토
-
-## 근본 원인 해결
-
-문제를 해결할 때 임시파일·하드코딩·우회 패치 등 **임시방편적인 해결책을 쓰지 말고
-근본 원인을 찾아 해결한다.**
-
-- 증상만 가리는 try/except, 무시(skip), 하드코딩 값, 워크어라운드 스크립트 금지
-- 에러가 나면 "왜 이 에러가 발생하는가"를 코드 흐름·의존성·타이밍 관점에서 추적
-- 원인이 외부 라이브러리·환경 제약이라 우회가 불가피하면, 우회임을 명시하고 사유를 코드 주석/보고에 기록
-- 같은 문제가 다른 위치에서도 재발할 가능성을 함께 점검
-
-## 변경 시 영향도 체크
-
-에러 수정·리팩터링·기능 변경 등 어떤 변경 사항이 발생할 때마다,
-**연관된 다른 부분의 기능에 영향이 없는지 반드시 체크한다.**
-
-- 변경한 함수·변수·파일을 호출/참조하는 모든 위치를 grep 으로 스캔
-- 동일 모듈 내 다른 함수, 동일 패키지 내 다른 노드, 다른 프로세스에서의 사용처 점검
-- 엣지 케이스(빈 입력, 시작/종료 타이밍, 실패 경로)가 변경의 영향을 받는지 확인
-- 영향이 있으면 수정 또는 명시적으로 보고
-- 변경 후 "다른 기능에 영향 없음"을 자체 검증해 사용자에게 보고
-
-## 도구·라이브러리 추천 검색 전략
-
-사용자가 "X 할 만한 도구/라이브러리/프레임워크/서버" 를 물어볼 때 따른다.
-
-- **생태계 우선** — Claude Code skill/plugin, MCP server (Smithery, Glama 등
-  레지스트리), GitHub 에서 `skill`/`plugin`/`mcp` 키워드 레포 먼저 확인.
-  Claude 생태계에 답이 없을 때만 generic 라이브러리/프레임워크로 확장.
-- **설치 가능한 것 우선** — "best X 2026" / "top 5 frameworks" 류 listicle
-  대신 GitHub 레포 직접 검색. star 수 + recent commit 활동으로 신호 판단.
-  medium/dev.to/towardsdatascience 비교글은 후순위.
-- **쿼리 특정성** — 검색 쿼리에 생태계 용어 사용:
-  `Claude Code skill`, `AgentSkill`, `MCP server`, `plugin marketplace`,
-  `site:github.com stars:>N`. `framework comparison best` 같은 generic
-  키워드 회피.
-- **단일 추천 원칙** — 비교 표/landscape overview 만들지 말 것. 기본 응답은
-  "X 추천 → 이유 → 대안 1-2 개" 형식. 사용자가 명시적으로 "비교해줘",
-  "옵션들 정리해줘", "이것보다 나은 거 있어?" 라고 비교를 요청했을 때만
-  표 사용 (이때도 4 행 이하로 간결하게).
-- **답이 framework 자체가 적절한 경우는 예외** — generic 라이브러리가 진짜
-  표준 답인 도메인 (예: numpy, sentence-transformers, pytorch) 에서는
-  Claude 생태계 안에 억지로 매칭하지 말고 표준 답 직행.

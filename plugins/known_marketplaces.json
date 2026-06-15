@@ -3,30 +3,40 @@
     "source": {
       "source": "github",
       "repo": "anthropics/claude-plugins-official"
-    }
+    },
+    "installLocation": "C:\\Users\\erifkim\\.claude\\plugins\\marketplaces\\claude-plugins-official",
+    "lastUpdated": "2026-06-15T08:49:16.077Z"
   },
   "anthropic-agent-skills": {
     "source": {
       "source": "github",
       "repo": "anthropics/skills"
-    }
+    },
+    "installLocation": "C:\\Users\\erifkim\\.claude\\plugins\\marketplaces\\anthropic-agent-skills",
+    "lastUpdated": "2026-06-15T08:49:18.207Z"
   },
   "karpathy-skills": {
     "source": {
       "source": "github",
       "repo": "forrestchang/andrej-karpathy-skills"
-    }
+    },
+    "installLocation": "C:\\Users\\erifkim\\.claude\\plugins\\marketplaces\\karpathy-skills",
+    "lastUpdated": "2026-06-13T07:37:46.681Z"
   },
   "claude-video": {
     "source": {
       "source": "github",
       "repo": "bradautomates/claude-video"
-    }
+    },
+    "installLocation": "C:\\Users\\erifkim\\.claude\\plugins\\marketplaces\\claude-video",
+    "lastUpdated": "2026-06-13T07:37:51.119Z"
   },
   "understand-anything": {
     "source": {
       "source": "github",
       "repo": "Lum1104/Understand-Anything"
-    }
+    },
+    "installLocation": "C:\\Users\\erifkim\\.claude\\plugins\\marketplaces\\understand-anything",
+    "lastUpdated": "2026-06-13T07:37:58.078Z"
   }
 }
