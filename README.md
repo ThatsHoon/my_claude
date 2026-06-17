@@ -22,6 +22,7 @@ AI 는 [APPLY.md](APPLY.md) 의 절차를 따라 CLAUDE.md, 플러그인, 사용
 | `plugins/enabled_plugins.json` | `settings.json` 의 `enabledPlugins` 섹션 |
 | `plugins/installed_plugins.json` | 설치할 마켓플레이스별 플러그인 목록 |
 | `plugins/known_marketplaces.json` | 등록할 플러그인 마켓 출처 |
+| `serena_config.yml` | `~/.serena/serena_config.yml` — Serena MCP 설정 (대시보드 팝업 차단, LF 줄바꿈) |
 | `skills/<이름>/` | 활성 사용자 스킬 — `~/.claude/skills/<이름>/` 에 복사 |
 | `skills/legacy/<이름>/` | 비활성 스킬 — 특정 환경에서만 필요하거나 deprecated |
 
