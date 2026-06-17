@@ -47,7 +47,7 @@ Claude Code CLI 안에서:
 /plugin install <이름>@<마켓이름>
 ```
 
-### 3-1. `claude-plugins-official` 에서 설치 (22 개)
+### 3-1. `claude-plugins-official` 에서 설치 (20 개)
 
 - `frontend-design`
 - `context7`
@@ -59,8 +59,6 @@ Claude Code CLI 안에서:
 - `superpowers`
 - `feature-dev`
 - `security-guidance`
-- `serena`
-- `slack`
 - `chrome-devtools-mcp`
 - `huggingface-skills`
 - `playground`
@@ -91,7 +89,7 @@ Claude Code CLI 안에서:
 ## 4. 활성화 상태 동기화
 
 `plugins/enabled_plugins.json` 의 키/값을 그대로 `~/.claude/settings.json` 의
-`enabledPlugins` 섹션에 반영. 26개 모두 `true`.
+`enabledPlugins` 섹션에 반영. 24개 모두 `true`.
 
 `theme` 등 다른 설정은 사용자의 PC 환경을 우선한다.
 
@@ -118,22 +116,7 @@ Claude Code CLI 안에서:
 `architecture-diagram`, `configdb-reverse`, `doosan-robotics`, `gp-quadruped`,
 `isaac-sim-bridge`, `isaac-sim-mcp`, `rive-web`
 
-## 6. Serena MCP 설정
-
-`serena_config.yml` 을 `~/.serena/serena_config.yml` 에 복사한다.
-`~/.serena/` 디렉토리가 없으면 Serena를 한 번 실행해야 자동 생성된다.
-
-| 소스 (이 레포) | 대상 경로 |
-| --- | --- |
-| `serena_config.yml` | `~/.serena/serena_config.yml` |
-
-주요 설정:
-- `web_dashboard_open_on_launch: false` — 세션 시작마다 브라우저 팝업 차단
-- `line_ending: lf` — diff 노이즈 방지
-
-**주의**: `projects:` 섹션은 PC별로 다르므로 복사 후 대상 PC의 프로젝트 경로로 수정하거나 비워둔다.
-
-## 7. Node.js 확인 (npx 기반 MCP 활성화)
+## 6. Node.js 확인 (npx 기반 MCP 활성화)
 
 `chrome-devtools`, `playwright`, `context7`, `drawio` 등 MCP 는 `npx` 로 spawn 되므로 Node.js 필요.
 
@@ -141,7 +124,7 @@ Claude Code CLI 안에서:
 node --version   # v20+ 권장
 ```
 
-## 8. 보고
+## 7. 보고
 
 완료 후 사용자에게 다음을 보고:
 
